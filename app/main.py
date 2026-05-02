@@ -23,6 +23,24 @@ def main():
         chat = client.chat.completions.create(
             model="llama3.1", # Ensure you have run `ollama run llama3.1` in your terminal
             messages=[{"role": "user", "content": args.p}],
+            tools= [{
+                "type": "function",
+                "function": {
+                    "name": "Read",
+                    "description": "Read and return the contents of a file",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "file_path": {
+                                "type": "string",
+                                "description": "The path to the file to read"
+                                }
+                            },
+                        "required": ["file_path"]
+                        }
+                    }
+                }
+                    ]
         )
         print("Using Local Ollama Model...", file=sys.stderr)
         
