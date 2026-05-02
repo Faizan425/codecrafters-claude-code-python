@@ -4,34 +4,53 @@ import sys
 
 from openai import OpenAI
 
-API_KEY = os.getenv("OPENROUTER_API_KEY")
-BASE_URL = os.getenv("OPENROUTER_BASE_URL", default="https://openrouter.ai/api/v1")
-
+# Global toggle: Set to 1 to use local Ollama, set to 0 before pushing to CodeCrafters
+USE_LOCAL = 0
 
 def main():
+    # 1. Parse arguments FIRST, so args.p is ready for either API call
     p = argparse.ArgumentParser()
     p.add_argument("-p", required=True)
     args = p.parse_args()
 
-    if not API_KEY:
-        raise RuntimeError("OPENROUTER_API_KEY is not set")
+    # 2. Setup the client and make the API call based on the global toggle
+    if USE_LOCAL == 1:
+        # --- LOCAL OLLAMA SETUP ---
+        api_key = "ollama" 
+        base_url = "http://localhost:11434/v1"
+        client = OpenAI(api_key=api_key, base_url=base_url)
+        
+        chat = client.chat.completions.create(
+            model="llama3.1", # Ensure you have run `ollama run llama3.1` in your terminal
+            messages=[{"role": "user", "content": args.p}],
+        )
+        print("Using Local Ollama Model...", file=sys.stderr)
+        
+    else:
+        # --- CODECRAFTERS OPENROUTER SETUP ---
+        api_key = os.getenv("OPENROUTER_API_KEY")
+        base_url = os.getenv("OPENROUTER_BASE_URL", default="https://openrouter.ai/api/v1")
+        
+        if not api_key:
+            raise RuntimeError("OPENROUTER_API_KEY is not set")
+            
+        client = OpenAI(api_key=api_key, base_url=base_url)
+        
+        chat = client.chat.completions.create(
+            model="anthropic/claude-haiku-4.5",
+            messages=[{"role": "user", "content": args.p}],
+        )
+        print("Using OpenRouter API...", file=sys.stderr)
 
-    client = OpenAI(api_key=API_KEY, base_url=BASE_URL)
-
-    chat = client.chat.completions.create(
-        model="anthropic/claude-haiku-4.5",
-        messages=[{"role": "user", "content": args.p}],
-    )
-
+    # 3. Handle the response
     if not chat.choices or len(chat.choices) == 0:
         raise RuntimeError("no choices in response")
 
-    # You can use print statements as follows for debugging, they'll be visible when running tests.
+    # Logs from your program will appear here! Visible when running tests.
     print("Logs from your program will appear here!", file=sys.stderr)
 
-    # TODO: Uncomment the following line to pass the first stage
-    # print(chat.choices[0].message.content)
-
+    # Uncommented to print the final output to standard out
+    print(chat.choices[0].message.content)
 
 if __name__ == "__main__":
     main()
