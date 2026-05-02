@@ -1,11 +1,17 @@
 import argparse
 import os
 import sys
+import json
 
 from openai import OpenAI
 
 # Global toggle: Set to 1 to use local Ollama, set to 0 before pushing to CodeCrafters
 USE_LOCAL = 0
+
+def read_tool(file_path):
+    with open(file_path, "r") as file:
+        content = file.read()
+        print(content, end="")
 
 def main():
     # 1. Parse arguments FIRST, so args.p is ready for either API call
@@ -81,12 +87,19 @@ def main():
     # 3. Handle the response
     if not chat.choices or len(chat.choices) == 0:
         raise RuntimeError("no choices in response")
+    
 
     # Logs from your program will appear here! Visible when running tests.
     print("Logs from your program will appear here!", file=sys.stderr)
+    
 
-    # Uncommented to print the final output to standard out
-    print(chat.choices[0].message.content)
+    if not chat.choices.message.tool_calls or len(chat.choices.message.tool_calls) == 0:
+        print(chat.choices[0].message.content)
+    else:
+        function = chat.choices.message.tool_calls
+        if(function[0].function.name == "Read"):
+            arguments = json.loads(function[0].function.arguments)
+            read_tool(arguments["file_path"])
 
 if __name__ == "__main__":
     main()
