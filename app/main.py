@@ -91,12 +91,14 @@ def main():
 
     # Logs from your program will appear here! Visible when running tests.
     print("Logs from your program will appear here!", file=sys.stderr)
+    chat = chat.choices[0]
     
 
-    if not chat.choices.message.tool_calls or len(chat.choices.message.tool_calls) == 0:
-        print(chat.choices[0].message.content)
+    if not chat.message.tool_calls or len(chat.message.tool_calls) == 0:
+        #print(chat.choices[0].message.content)
+        print(chat.message.content)
     else:
-        function = chat.choices.message.tool_calls
+        function = chat.message.tool_calls
         if(function[0].function.name == "Read"):
             arguments = json.loads(function[0].function.arguments)
             read_tool(arguments["file_path"])
