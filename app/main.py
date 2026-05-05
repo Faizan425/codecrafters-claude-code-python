@@ -11,7 +11,33 @@ USE_LOCAL = 0
 def read_tool(file_path):
     with open(file_path, "r") as file:
         content = file.read()
-        print(content, end="")
+        return content
+
+def agent_loop(model, messages, tools,client):
+    while(True):
+        chat = client.chat.completions.create(model=model , messages=messages, tools=tools)
+        #print("Using open router", file = sys.stderr)
+        if not chat.choices or len(chat.choices) == 0:
+            raise RuntimeError("no choices in response")
+        chat = chat.choices[0]
+        messages.append(chat.message)
+        if not chat.message.tool_calls or len(chat.message.tool_calls) == 0:
+            #print(chat.choices[0].message.content)
+            print(chat.message.content)
+            break
+        else:
+            for tool in chat.message.tool_calls:
+                if(tool.function.name == "Read"):
+                    arguments = json.loads(tool.function.arguments)
+                    result = read_tool(arguments["file_path"])
+                    res = {"role": "tool", "tool_call_id" : tool.id, "content" : result}
+                    #res = json.loads('''{
+                    #    "role": "tool",
+                    #    "tool_call_id": {0}
+                    #    "content" : {1}
+                    #    }'''.format(tool.id, result))
+                    messages.append(res)
+
 
 def main():
     # 1. Parse arguments FIRST, so args.p is ready for either API call
@@ -26,7 +52,7 @@ def main():
         base_url = "http://localhost:11434/v1"
         client = OpenAI(api_key=api_key, base_url=base_url)
         
-        chat = client.chat.completions.create(
+        agent_loop(
             model="llama3.1", # Ensure you have run `ollama run llama3.1` in your terminal
             messages=[{"role": "user", "content": args.p}],
             tools= [{
@@ -46,7 +72,8 @@ def main():
                         }
                     }
                 }
-                    ]
+                    ],
+            client = client
         )
         print("Using Local Ollama Model...", file=sys.stderr)
         
@@ -60,7 +87,7 @@ def main():
             
         client = OpenAI(api_key=api_key, base_url=base_url)
         
-        chat = client.chat.completions.create(
+        agent_loop(
             model="anthropic/claude-haiku-4.5",
             messages=[{"role": "user", "content": args.p}],
             tools= [{
@@ -80,28 +107,29 @@ def main():
                         }
                     }
                 }
-                    ]
+                    ],
+            client = client
         )
-        print("Using OpenRouter API...", file=sys.stderr)
+        #print("Using OpenRouter API...", file=sys.stderr)
 
     # 3. Handle the response
-    if not chat.choices or len(chat.choices) == 0:
-        raise RuntimeError("no choices in response")
+    #if not chat.choices or len(chat.choices) == 0:
+     #   raise RuntimeError("no choices in response")
     
 
     # Logs from your program will appear here! Visible when running tests.
-    print("Logs from your program will appear here!", file=sys.stderr)
-    chat = chat.choices[0]
+    #print("Logs from your program will appear here!", file=sys.stderr)
+    #chat = chat.choices[0]
     
 
-    if not chat.message.tool_calls or len(chat.message.tool_calls) == 0:
-        #print(chat.choices[0].message.content)
-        print(chat.message.content)
-    else:
-        function = chat.message.tool_calls
-        if(function[0].function.name == "Read"):
-            arguments = json.loads(function[0].function.arguments)
-            read_tool(arguments["file_path"])
+    #if not chat.message.tool_calls or len(chat.message.tool_calls) == 0:
+    #    #print(chat.choices[0].message.content)
+    #    print(chat.message.content)
+    #else:
+    #    function = chat.message.tool_calls
+    #    if(function[0].function.name == "Read"):
+    #        arguments = json.loads(function[0].function.arguments)
+    #        read_tool(arguments["file_path"])
 
 if __name__ == "__main__":
     main()
