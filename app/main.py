@@ -2,6 +2,7 @@ import argparse
 import os
 import sys
 import json
+import subprocess
 
 from openai import OpenAI
 
@@ -23,6 +24,14 @@ def write_tool(file_path, content):
     with open(file_path, "w") as file:
         file.write(content)
         return "File written successfully"
+
+def bash_tool(command):
+    arguments = command.split()
+    try:
+        result  = subprocess.run(arguments, capture_output = True, text = True, check = True)
+        return (f"Success: result:{result.stdout}")
+    except subprocess.CalledProcessError as e:
+        return (f"Command failed: error encountered: {e.stderr}") 
 
 def agent_loop(model, messages, tools,client):
     while(True):
@@ -53,6 +62,11 @@ def agent_loop(model, messages, tools,client):
                     result = write_tool(arguments["file_path"], arguments["content"])
                     res = {"role": "tool", "tool_call_id" : tool.id, "content": result}
                     messages.append(res)
+                elif(tool.function.name = "Bash"):
+                    arguments = json.loads(tool.function.arguments)
+                    result = bash_tool(arguments["command"])
+                    res = {"role": "tool", "tool_call_id": tool_id, "content": result}
+                    message.append(res)
 
 
 def main():
@@ -104,6 +118,23 @@ def main():
                                     "content": {
                                         "type": "string",
                                         "description": "The content to write to the file"
+                                        }
+                                    }
+                                }
+                            }
+                        },
+                    {
+                        "type": "function",
+                        "function": {
+                            "name": "Bash",
+                            "description": "Execute a shell command",
+                            "parameters": {
+                                "type": "object",
+                                "required": ["command"],
+                                "properties": {
+                                    "command": {
+                                        "type": "string",
+                                        "description": "The command to execute"
                                         }
                                     }
                                 }
@@ -160,6 +191,23 @@ def main():
                                     "content": {
                                         "type": "string",
                                         "description": "The content to write to the file"
+                                        }
+                                    }
+                                }
+                            }
+                        },
+                    {
+                        "type": "function",
+                        "function": {
+                            "name": "Bash",
+                            "description": "Execute a shell command",
+                            "parameters": {
+                                "type": "object",
+                                "required": ["command"],
+                                "properties": {
+                                    "command": {
+                                        "type": "string",
+                                        "description": "The command to execute"
                                         }
                                     }
                                 }
