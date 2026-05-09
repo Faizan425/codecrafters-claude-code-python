@@ -65,7 +65,7 @@ def agent_loop(model, messages, tools,client):
                 elif(tool.function.name == "Bash"):
                     arguments = json.loads(tool.function.arguments)
                     result = bash_tool(arguments["command"])
-                    res = {"role": "tool", "tool_call_id": tool_id, "content": result}
+                    res = {"role": "tool", "tool_call_id": tool.id, "content": result}
                     message.append(res)
 
 
