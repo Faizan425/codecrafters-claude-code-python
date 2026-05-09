@@ -87,7 +87,7 @@ def main():
                         "required": ["file_path"]
                         }
                     }
-                }
+                },
                     {
                         "type": "function",
                         "function": {
