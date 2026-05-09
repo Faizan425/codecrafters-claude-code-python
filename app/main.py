@@ -9,9 +9,20 @@ from openai import OpenAI
 USE_LOCAL = 0
 
 def read_tool(file_path):
-    with open(file_path, "r") as file:
-        content = file.read()
-        return content
+    try:
+        with open(file_path, "r") as file:
+            content = file.read()
+            return content
+    except FileNotFoundError:
+        return "read mode (r) does not create files , file does not exist."
+
+def write_tool(file_path, content):
+    folder_path = os.path.dirname(file_path)
+    if(folder_path):
+        os.makedirs(folder_path, exist_ok = True)
+    with open(file_path, "w") as file:
+        file.write(content)
+        return "File written successfully"
 
 def agent_loop(model, messages, tools,client):
     while(True):
@@ -36,6 +47,11 @@ def agent_loop(model, messages, tools,client):
                     #    "tool_call_id": {0}
                     #    "content" : {1}
                     #    }'''.format(tool.id, result))
+                    messages.append(res)
+                elif(tool.function.name == "Write"):
+                    arguments = json.loads(tool.function.arguments)
+                    result = write_tool(arguments["file_path"], arguments["content"])
+                    res = {"role": "tool", "tool_call_id" : tool.id, "content": result}
                     messages.append(res)
 
 
@@ -72,6 +88,27 @@ def main():
                         }
                     }
                 }
+                    {
+                        "type": "function",
+                        "function": {
+                            "name": "Write",
+                            "description": "Write content to a file",
+                            "parameters": {
+                                "type": "object",
+                                "required": ["file_path", "content"],
+                                "properties": {
+                                    "file_path": {
+                                        "type": "string",
+                                        "description": "The path of the file to write to"
+                                        },
+                                    "content": {
+                                        "type": "string",
+                                        "description": "The content to write to the file"
+                                        }
+                                    }
+                                }
+                            }
+                        }
                     ],
             client = client
         )
@@ -106,7 +143,28 @@ def main():
                         "required": ["file_path"]
                         }
                     }
-                }
+                },
+                    {
+                        "type": "function",
+                        "function": {
+                            "name": "Write",
+                            "description": "Write content to a file",
+                            "parameters": {
+                                "type": "object",
+                                "required": ["file_path", "content"],
+                                "properties": {
+                                    "file_path": {
+                                        "type": "string",
+                                        "description": "The path of the file to write to"
+                                        },
+                                    "content": {
+                                        "type": "string",
+                                        "description": "The content to write to the file"
+                                        }
+                                    }
+                                }
+                            }
+                        }
                     ],
             client = client
         )
