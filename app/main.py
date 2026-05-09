@@ -62,7 +62,7 @@ def agent_loop(model, messages, tools,client):
                     result = write_tool(arguments["file_path"], arguments["content"])
                     res = {"role": "tool", "tool_call_id" : tool.id, "content": result}
                     messages.append(res)
-                elif(tool.function.name = "Bash"):
+                elif(tool.function.name == "Bash"):
                     arguments = json.loads(tool.function.arguments)
                     result = bash_tool(arguments["command"])
                     res = {"role": "tool", "tool_call_id": tool_id, "content": result}
