@@ -3,11 +3,29 @@ import os
 import sys
 import json
 import subprocess
+import yaml
+import frontmatter
+from pathlib import Path
 
 from openai import OpenAI
 
 # Global toggle: Set to 1 to use local Ollama, set to 0 before pushing to CodeCrafters
 USE_LOCAL = 0
+skills_prompt = dict()
+
+def initialize_skills():
+    target_folder = Path("./.claude/skills")
+    prefix = "SKILL"
+    all_skill_files = [p for p in target_folder.rglob(f"{prefix}*") if p.is_file()]
+    for skill_file in all_skill_files:
+        with open(skill_file, "r") as f:
+            try:
+                yaml_data = frontmatter.load(f)
+                skills_prompt[yaml_data['name']]=yaml_data['description']
+                
+            except yaml.YAMLError as exc:
+                print(f"Error parsing YAML: {exc}")
+    
 
 def read_tool(file_path):
     try:
@@ -74,6 +92,10 @@ def main():
     p = argparse.ArgumentParser()
     p.add_argument("-p", required=True)
     args = p.parse_args()
+    initialize_skills()
+    skill_prompt_content = "You have access to the following skills:\n\n-"
+    for key, value in skills_prompt.items():
+        skill_prompt_content += f" {key}:{value}\n" 
 
     # 2. Setup the client and make the API call based on the global toggle
     if USE_LOCAL == 1:
@@ -84,7 +106,7 @@ def main():
         
         agent_loop(
             model="llama3.1", # Ensure you have run `ollama run llama3.1` in your terminal
-            messages=[{"role": "user", "content": args.p}],
+            messages=[{"role":"system", "content": skill_prompt_content},{"role": "user", "content": args.p}],
             tools= [{
                 "type": "function",
                 "function": {
@@ -157,7 +179,7 @@ def main():
         
         agent_loop(
             model="anthropic/claude-haiku-4.5",
-            messages=[{"role": "user", "content": args.p}],
+            messages=[{"role":"system", "content": skill_prompt_content},{"role": "user", "content": args.p}],
             tools= [{
                 "type": "function",
                 "function": {
