@@ -95,15 +95,15 @@ def format_content(content, argument):
     contents = content.split(" ")
     formatted_content=""
     for c in contents:
-        if(re.search(r"^$ARGUMENTS", c)):
+        if(re.search(r"^\$ARGUMENTS", c)):
             
-            formatted_content = formatted_content + re.sub(r"ARGUMENTS",argument,c) + " "
-        elif (match:=re.search(r"^$\d+",c)):
+            formatted_content = formatted_content + re.sub(r"^\$ARGUMENTS",argument,c) + " "
+        elif (match:=re.search(r"^\$\d+",c)):
             if(arguments_supplied):
-                formatted_content = formatted_content + re.sub(r"^$\d+",arguments_list[int(match.group())],c) + " "
+                formatted_content = formatted_content + re.sub(r"^\$\d+",arguments_list[int(match.group())],c) + " "
             else:
                 
-                formatted_content = formatted_content + re.sub(r"^$\d+", "",c ) + " "
+                formatted_content = formatted_content + re.sub(r"^\$\d+", "",c ) + " "
         else:
             formatted_content = formatted_content + c + " "
     return formatted_content
