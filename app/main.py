@@ -90,7 +90,7 @@ def agent_loop(model, messages, tools,client):
                     messages.append(res)
 
 def format_content(content, argument):
-    print(argument)
+    # print(argument)
     argument = "" if argument == " " else argument
     arguments_supplied = False if argument == ""  else True
     arguments_list = argument.split(" ")
@@ -103,13 +103,14 @@ def format_content(content, argument):
         elif (match:=re.search(r"^\$\d+",c)):
             if(arguments_supplied):
                 num = match.group()
-                num = int(num[1:])
+                num = int(num[1:]) #skip $
                 formatted_content = formatted_content + re.sub(r"^\$\d+",arguments_list[num],c) + " "
             else:
                 
                 formatted_content = formatted_content + re.sub(r"^\$\d+", "",c ) + " "
         else:
             formatted_content = formatted_content + c + " "
+        print(formatted_content)
     return formatted_content
     # for c in contents:
     #     if c[0] == "$":
