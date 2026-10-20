@@ -135,28 +135,57 @@ def format_content(content, argument):
     # return formatted_content
 
 def parse_skill_invocation(prompt, skills_metadata):
-    if(prompt[0] == "/"):
-        parsed_prompt = prompt.split(" ")
-        final_prompt = ""
+    if(re.search(r"^\/", prompt)):
+        ARGUMENT = ""
+        skills = []
+        invocations = []
+        prompt = prompt.split(" ")
+        for p in range(len(prompt)):
+            match = re.search(r"^\/", prompt[p])
+            skill = match.group() if match else None
+            skill = skill[1:].lower()
+            if(skill and skill in skills_metadata.keys()):
+                skills +=[skill]
+            else:
+                ARGUMENT = " ".join(prompt[p:])
+                break
         try:
-            skill = parsed_prompt[0][1:].lower()
-            if skill in skills_metadata.keys():
-                skill_file = Path("./.claude/skills" + "/" +skill + "/SKILL.md")
+            if(len(skills)==0):
+                raise Exception("No valid skills found.")
+            for skill in skills:
+                skill_file = Path("./.claude/skills" + "/" + skill + "/SKILL.md")
                 with open(skill_file, 'r', encoding= 'utf-8') as f:
                     post = frontmatter.load(f)
-                    content = post.content
-                    if len(parsed_prompt)>1: # length == 1 implies plain skill invocation >1 implies presence of arguments
-                        ARGUMENT = " ".join(parsed_prompt[1:])
-                        content = format_content(content, ARGUMENT)
-                    else:
-                        ARGUMENT = ""
-                        content = format_content(content, ARGUMENT)
-                    final_prompt  =  content
-            return final_prompt
+                    content = format_content(post.content, ARGUMENT)
+                    invocations+=[content]
         except Exception as e:
-            print(e) 
+            print(e)
+        return invocations
+
     else:
-        return prompt 
+        return [prompt]
+    # if(prompt[0] == "/"):
+    #     parsed_prompt = prompt.split(" ")
+    #     final_prompt = ""
+    #     try:
+    #         skill = parsed_prompt[0][1:].lower()
+    #         if skill in skills_metadata.keys():
+    #             skill_file = Path("./.claude/skills" + "/" +skill + "/SKILL.md")
+    #             with open(skill_file, 'r', encoding= 'utf-8') as f:
+    #                 post = frontmatter.load(f)
+    #                 content = post.content
+    #                 if len(parsed_prompt)>1: # length == 1 implies plain skill invocation >1 implies presence of arguments
+    #                     ARGUMENT = " ".join(parsed_prompt[1:])
+    #                     content = format_content(content, ARGUMENT)
+    #                 else:
+    #                     ARGUMENT = ""
+    #                     content = format_content(content, ARGUMENT)
+    #                 final_prompt  =  content
+    #         return final_prompt
+    #     except Exception as e:
+    #         print(e) 
+    # else:
+    #     return prompt 
     # parsed_prompt = prompt.split(" ")
     # final_prompt = ""
     # for p in parsed_prompt:
@@ -183,11 +212,15 @@ def main():
     p.add_argument("-p", required=True)
     args = p.parse_args()
     skills_metadata = initialize_skills()
-    prompt = parse_skill_invocation(args.p, skills_metadata)
+    prompt_list = parse_skill_invocation(args.p, skills_metadata)
+    
     skill_prompt_content = "You have access to the following skills:\n\n-"
     for key, value in skills_metadata.items():
         skill_prompt_content += f" {key}:{value}\n" 
 
+    messages=[{"role":"system", "content": skill_prompt_content}]
+    for p in prompt_list:
+        messages +=[{"role":"user", "content": p}]
     # 2. Setup the client and make the API call based on the global toggle
     api_key = "ollama" if USE_LOCAL == 1 else os.getenv("OPENROUTER_API_KEY")
     base_url = "http://localhost:11434/v1" if USE_LOCAL == 1 else os.getenv("OPENROUTER_BASE_URL", default="https://openrouter.ai/api/v1") 
@@ -200,7 +233,8 @@ def main():
         
     agent_loop(
             model= model, # Ensure you have run `ollama run llama3.1` in your terminal
-            messages=[{"role":"system", "content": skill_prompt_content},{"role": "user", "content": prompt}],
+            # messages=[{"role":"system", "content": skill_prompt_content},{"role": "user", "content": prompt}],
+            messages = messages,
             tools= [{
                 "type": "function",
                 "function": {
