@@ -88,27 +88,74 @@ def agent_loop(model, messages, tools,client):
                     res = {"role": "tool", "tool_call_id": tool.id, "content": result}
                     messages.append(res)
 
+def format_content(content, argument):
+    arguments_list = argument.split(" ")
+    contents = content.split(" ")
+    formatted_content=""
+    for c in contents:
+        if c[0] == "$":
+            if c[1:] == "ARGUMENTS":
+                formatted_content = formatted_content + argument + " "
+            else:
+                nums = ""
+                remaining = ""
+                number = c[1:]
+                for x in range(len(number)):
+                    if number[x] in "1234567890":
+                        nums +=number[x]
+                    else:
+                        remaining = number[x:] # append the remaining non numeric characters
+                        break 
+                
+
+                n = int(nums)
+                if(n< len(arguments_list)):
+                    formatted_content = formatted_content + arguments_list[n] + remaining + " "
+                else:
+                    raise Exception("Invalid argument access")
+        else:
+            formatted_content = formatted_content + c + " "
+    return formatted_content
 
 def parse_skill_invocation(prompt, skills_metadata):
-    parsed_prompt = prompt.split(" ")
-    final_prompt = ""
-    for p in parsed_prompt:
-        if "/" == p[0]:  #Skill invocation starts with /
-            try:
-                skill = p[1:].lower()
-                if  skill in skills_metadata.keys():
+    if(prompt[0] == "/"):
+        parsed_prompt = prompt.split(" ")
+        final_prompt = ""
+        try:
+            skill = parsed_prompt[0][1:].lower()
+            if skill in skills_metadata.keys():
+                skill_file = Path("./.claude/skills" + "/" +skill + "/SKILL.md")
+                with open(skill_file, 'r', encoding= 'utf-8') as f:
+                    post = frontmatter.load(f)
+                    content = post.content
+                    if len(parsed_prompt)>1: # length == 1 implies plain skill invocation >1 implies presence of arguments
+                        ARGUMENT = " ".join(parsed_prompt[1:])
+                        content = format_content(content, ARGUMENT)
+                    final_prompt  =  content
+            return final_prompt
+        except Exception as e:
+            print(e) 
+    else:
+        return prompt 
+    # parsed_prompt = prompt.split(" ")
+    # final_prompt = ""
+    # for p in parsed_prompt:
+    #     if "/" == p[0]:  #Skill invocation starts with /
+    #         try:
+    #             skill = p[1:].lower()
+    #             if  skill in skills_metadata.keys():
                     
-                    skill_file = Path("./.claude/skills" + "/" + skill  + "/SKILL.md")
-                    with open(skill_file, 'r', encoding = 'utf-8') as f:
-                        post  = frontmatter.load(f)
-                        final_prompt =final_prompt+ post.content + " " 
-                else:
-                    raise Exception("Skill not found.")
-            except Exception as e:
-                print(e)
-        else:
-            final_prompt= final_prompt+ p + " "
-    return final_prompt  
+    #                 skill_file = Path("./.claude/skills" + "/" + skill  + "/SKILL.md")
+    #                 with open(skill_file, 'r', encoding = 'utf-8') as f:
+    #                     post  = frontmatter.load(f)
+    #                     final_prompt =final_prompt+ post.content + " " 
+    #             else:
+    #                 raise Exception("Skill not found.")
+    #         except Exception as e:
+    #             print(e)
+    #     else:
+    #         final_prompt= final_prompt+ p + " "
+    # return final_prompt  
 
 def main():
     # 1. Parse arguments FIRST, so args.p is ready for either API call
