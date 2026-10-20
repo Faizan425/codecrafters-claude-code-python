@@ -97,6 +97,7 @@ def format_content(content, argument):
     contents = content.split(" ")
     formatted_content=""
     for c in contents:
+        print(re.search(r"^\$ARGUMENTS", c))
         if(re.search(r"^\$ARGUMENTS", c)):
             
             formatted_content = formatted_content + re.sub(r"^\$ARGUMENTS",argument,c) + " "
