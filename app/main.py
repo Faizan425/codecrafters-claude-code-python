@@ -11,20 +11,22 @@ from openai import OpenAI
 
 # Global toggle: Set to 1 to use local Ollama, set to 0 before pushing to CodeCrafters
 USE_LOCAL = 0
-skills_prompt = dict()
+
 
 def initialize_skills():
     target_folder = Path("./.claude/skills")
-    prefix = "SKILL"
-    all_skill_files = [p for p in target_folder.rglob(f"{prefix}*") if p.is_file()]
+    skills_metadata = dict()
+    prefix = "SKILL.md"
+    all_skill_files = [p for p in target_folder.rglob(f"{prefix}") if p.is_file()]
     for skill_file in all_skill_files:
         with open(skill_file, "r") as f:
             try:
                 yaml_data = frontmatter.load(f)
-                skills_prompt[yaml_data['name']]=yaml_data['description']
+                skills_metadata[yaml_data['name']]=yaml_data['description']
                 
             except yaml.YAMLError as exc:
                 print(f"Error parsing YAML: {exc}")
+    return skills_metadata
     
 
 def read_tool(file_path):
@@ -87,99 +89,51 @@ def agent_loop(model, messages, tools,client):
                     messages.append(res)
 
 
+def parse_skill_invocation(prompt, skills_metadata):
+    parsed_prompt = prompt.split(" ")
+    final_prompt = ""
+    for p in parsed_prompt:
+        if "/" == p[0]:  #Skill invocation starts with /
+            try:
+                skill = p[1:].lower()
+                if  skill in skills_metadata.keys():
+                    
+                    skill_file = Path("./.claude/skills" + "/" + skill  + "/SKILL.md")
+                    with open(skill_file, 'r', encoding = 'utf-8') as f:
+                        post  = frontmatter.load(f)
+                        final_prompt =final_prompt+ post.content + " " 
+                else:
+                    raise Exception("Skill not found.")
+            except Exception as e:
+                print(e)
+        else:
+            final_prompt= final_prompt+ p + " "
+    return final_prompt  
+
 def main():
     # 1. Parse arguments FIRST, so args.p is ready for either API call
     p = argparse.ArgumentParser()
     p.add_argument("-p", required=True)
     args = p.parse_args()
-    initialize_skills()
+    skills_metadata = initialize_skills()
+    prompt = parse_skill_invocation(args.p, skills_metadata)
     skill_prompt_content = "You have access to the following skills:\n\n-"
-    for key, value in skills_prompt.items():
+    for key, value in skills_metadata.items():
         skill_prompt_content += f" {key}:{value}\n" 
 
     # 2. Setup the client and make the API call based on the global toggle
-    if USE_LOCAL == 1:
-        # --- LOCAL OLLAMA SETUP ---
-        api_key = "ollama" 
-        base_url = "http://localhost:11434/v1"
-        client = OpenAI(api_key=api_key, base_url=base_url)
-        
-        agent_loop(
-            model="llama3.1", # Ensure you have run `ollama run llama3.1` in your terminal
-            messages=[{"role":"system", "content": skill_prompt_content},{"role": "user", "content": args.p}],
-            tools= [{
-                "type": "function",
-                "function": {
-                    "name": "Read",
-                    "description": "Read and return the contents of a file",
-                    "parameters": {
-                        "type": "object",
-                        "properties": {
-                            "file_path": {
-                                "type": "string",
-                                "description": "The path to the file to read"
-                                }
-                            },
-                        "required": ["file_path"]
-                        }
-                    }
-                },
-                    {
-                        "type": "function",
-                        "function": {
-                            "name": "Write",
-                            "description": "Write content to a file",
-                            "parameters": {
-                                "type": "object",
-                                "required": ["file_path", "content"],
-                                "properties": {
-                                    "file_path": {
-                                        "type": "string",
-                                        "description": "The path of the file to write to"
-                                        },
-                                    "content": {
-                                        "type": "string",
-                                        "description": "The content to write to the file"
-                                        }
-                                    }
-                                }
-                            }
-                        },
-                    {
-                        "type": "function",
-                        "function": {
-                            "name": "Bash",
-                            "description": "Execute a shell command",
-                            "parameters": {
-                                "type": "object",
-                                "required": ["command"],
-                                "properties": {
-                                    "command": {
-                                        "type": "string",
-                                        "description": "The command to execute"
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    ],
-            client = client
-        )
-        print("Using Local Ollama Model...", file=sys.stderr)
-        
-    else:
-        # --- CODECRAFTERS OPENROUTER SETUP ---
-        api_key = os.getenv("OPENROUTER_API_KEY")
-        base_url = os.getenv("OPENROUTER_BASE_URL", default="https://openrouter.ai/api/v1")
-        
-        if not api_key:
-            raise RuntimeError("OPENROUTER_API_KEY is not set")
+    api_key = "ollama" if USE_LOCAL == 1 else os.getenv("OPENROUTER_API_KEY")
+    base_url = "http://localhost:11434/v1" if USE_LOCAL == 1 else os.getenv("OPENROUTER_BASE_URL", default="https://openrouter.ai/api/v1") 
+    
+    if not api_key:
+        raise RuntimeError("OPENROUTER_API_KEY or local Ollama model is not set")
             
-        client = OpenAI(api_key=api_key, base_url=base_url)
+    client = OpenAI(api_key=api_key, base_url=base_url)
+    model = "llama3.1" if USE_LOCAL == 1 else "anthropic/claude-haiku-4.5"
         
-        agent_loop(
-            model="anthropic/claude-haiku-4.5",
-            messages=[{"role":"system", "content": skill_prompt_content},{"role": "user", "content": args.p}],
+    agent_loop(
+            model= model, # Ensure you have run `ollama run llama3.1` in your terminal
+            messages=[{"role":"system", "content": skill_prompt_content},{"role": "user", "content": prompt}],
             tools= [{
                 "type": "function",
                 "function": {
@@ -238,26 +192,9 @@ def main():
                     ],
             client = client
         )
-        #print("Using OpenRouter API...", file=sys.stderr)
-
-    # 3. Handle the response
-    #if not chat.choices or len(chat.choices) == 0:
-     #   raise RuntimeError("no choices in response")
-    
-
-    # Logs from your program will appear here! Visible when running tests.
-    #print("Logs from your program will appear here!", file=sys.stderr)
-    #chat = chat.choices[0]
-    
-
-    #if not chat.message.tool_calls or len(chat.message.tool_calls) == 0:
-    #    #print(chat.choices[0].message.content)
-    #    print(chat.message.content)
-    #else:
-    #    function = chat.message.tool_calls
-    #    if(function[0].function.name == "Read"):
-    #        arguments = json.loads(function[0].function.arguments)
-    #        read_tool(arguments["file_path"])
+    # print("Using Local Ollama Model...", file=sys.stderr)
+        
+        
 
 if __name__ == "__main__":
     main()
