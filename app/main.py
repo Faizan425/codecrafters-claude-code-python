@@ -111,7 +111,7 @@ def format_content(content, argument):
                 formatted_content = formatted_content + re.sub(r"\$\d+", "",c ) + " "
         else:
             formatted_content = formatted_content + c + " "
-        print(formatted_content)
+        # print(formatted_content)
     return formatted_content
     # for c in contents:
     #     if c[0] == "$":
