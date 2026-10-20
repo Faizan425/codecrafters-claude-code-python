@@ -4,6 +4,7 @@ import sys
 import json
 import subprocess
 import yaml
+import re
 import frontmatter
 from pathlib import Path
 
@@ -89,33 +90,47 @@ def agent_loop(model, messages, tools,client):
                     messages.append(res)
 
 def format_content(content, argument):
+    arguments_supplied = False if argument == "" else True
     arguments_list = argument.split(" ")
     contents = content.split(" ")
     formatted_content=""
     for c in contents:
-        if c[0] == "$":
-            if c[1:] == "ARGUMENTS":
-                formatted_content = formatted_content + argument + " "
+        if(re.search(r"^$ARGUMENTS", c)):
+            
+            formatted_content = formatted_content + re.sub(r"ARGUMENTS",argument,c) + " "
+        elif (match:=re.search(r"^$\d+",c)):
+            if(arguments_supplied):
+                formatted_content = formatted_content + re.sub(r"^$\d+",arguments_list[int(match.group())],c) + " "
             else:
-                nums = ""
-                remaining = ""
-                number = c[1:]
-                for x in range(len(number)):
-                    if number[x] in "1234567890":
-                        nums +=number[x]
-                    else:
-                        remaining = number[x:] # append the remaining non numeric characters
-                        break 
                 
-
-                n = int(nums)
-                if(n< len(arguments_list)):
-                    formatted_content = formatted_content + arguments_list[n] + remaining + " "
-                else:
-                    raise Exception("Invalid argument access")
+                formatted_content = formatted_content + re.sub(r"^$\d+", "",c ) + " "
         else:
             formatted_content = formatted_content + c + " "
     return formatted_content
+    # for c in contents:
+    #     if c[0] == "$":
+    #         if c[1:] == "ARGUMENTS":
+    #             formatted_content = formatted_content + argument + " "
+    #         else:
+    #             nums = ""
+    #             remaining = ""
+    #             number = c[1:]
+    #             for x in range(len(number)):
+    #                 if number[x] in "1234567890":
+    #                     nums +=number[x]
+    #                 else:
+    #                     remaining = number[x:] # append the remaining non numeric characters
+    #                     break 
+                
+
+    #             n = int(nums)
+    #             if(n< len(arguments_list)):
+    #                 formatted_content = formatted_content + arguments_list[n] + remaining + " "
+    #             else:
+    #                 raise Exception("Invalid argument access")
+    #     else:
+    #         formatted_content = formatted_content + c + " "
+    # return formatted_content
 
 def parse_skill_invocation(prompt, skills_metadata):
     if(prompt[0] == "/"):
@@ -130,6 +145,9 @@ def parse_skill_invocation(prompt, skills_metadata):
                     content = post.content
                     if len(parsed_prompt)>1: # length == 1 implies plain skill invocation >1 implies presence of arguments
                         ARGUMENT = " ".join(parsed_prompt[1:])
+                        content = format_content(content, ARGUMENT)
+                    else:
+                        ARGUMENT = ""
                         content = format_content(content, ARGUMENT)
                     final_prompt  =  content
             return final_prompt
