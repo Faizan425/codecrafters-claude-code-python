@@ -135,13 +135,13 @@ def format_content(content, argument):
     # return formatted_content
 
 def parse_skill_invocation(prompt, skills_metadata):
-    if(re.search(r"^\/", prompt)):
+    if(prompt[0]=="/"):
         ARGUMENT = ""
         skills = []
         invocations = []
         prompt = prompt.split(" ")
         for p in range(len(prompt)):
-            match = re.search(r"^\/", prompt[p])
+            match = re.search(r"^/", prompt[p])
             skill = match.group() if match else None
             skill = skill[1:].lower()
             if(skill and skill in skills_metadata.keys()):
