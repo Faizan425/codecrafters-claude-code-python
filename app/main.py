@@ -100,7 +100,9 @@ def format_content(content, argument):
             formatted_content = formatted_content + re.sub(r"^\$ARGUMENTS",argument,c) + " "
         elif (match:=re.search(r"^\$\d+",c)):
             if(arguments_supplied):
-                formatted_content = formatted_content + re.sub(r"^\$\d+",arguments_list[int(match.group())],c) + " "
+                num = match.group()
+                num = int(num[1:])
+                formatted_content = formatted_content + re.sub(r"^\$\d+",arguments_list[num],c) + " "
             else:
                 
                 formatted_content = formatted_content + re.sub(r"^\$\d+", "",c ) + " "
