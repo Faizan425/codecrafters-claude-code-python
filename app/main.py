@@ -90,6 +90,7 @@ def agent_loop(model, messages, tools,client):
                     messages.append(res)
 
 def format_content(content, argument):
+    print(argument)
     argument = "" if argument == " " else argument
     arguments_supplied = False if argument == ""  else True
     arguments_list = argument.split(" ")
