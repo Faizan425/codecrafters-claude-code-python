@@ -143,7 +143,7 @@ def parse_skill_invocation(prompt, skills_metadata):
         for p in range(len(prompt)):
             match = re.search(r"^/[a-z]+", prompt[p])
             skill = match.group() if match else None
-            skill = skill[1:].lower()
+            skill = skill[1:].lower() if skill else None
             if(skill and skill in skills_metadata.keys()):
                 skills +=[skill]
             else:
