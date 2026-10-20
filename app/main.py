@@ -141,7 +141,7 @@ def parse_skill_invocation(prompt, skills_metadata):
         invocations = []
         prompt = prompt.split(" ")
         for p in range(len(prompt)):
-            match = re.search(r"^/", prompt[p])
+            match = re.search(r"^/[a-z]+", prompt[p])
             skill = match.group() if match else None
             skill = skill[1:].lower()
             if(skill and skill in skills_metadata.keys()):
