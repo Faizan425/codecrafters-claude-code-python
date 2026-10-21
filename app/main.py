@@ -117,9 +117,9 @@ def parse_skill_invocation(prompt, skills_metadata):
         return [prompt]
 
 def skill_tool(argument, skills_metadata):
-    print(argument)
-    argument = "/" + argument
-    return parse_skill_invocation(argument,skills_metadata)
+    # print(argument)
+    argument['name'] = "/" + argument['name']
+    return parse_skill_invocation(argument['name'],skills_metadata)
 
 def agent_loop(model, messages, tools,client, skills_metadata):
     while(True):
