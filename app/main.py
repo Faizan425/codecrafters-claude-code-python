@@ -158,7 +158,7 @@ def agent_loop(model, messages, tools,client, skills_metadata):
                     arguments = json.loads(tool.function.arguments)
                     result = skill_tool(arguments,skills_metadata)
                     res = {"role": "tool", "tool_call_id": tool.id, "content":result}
-                    message.append(res)
+                    messages.append(res)
 
 # def format_content(content, argument):
 #     # print(argument)
