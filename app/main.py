@@ -51,7 +51,7 @@ def bash_tool(command):
     try:
         result  = subprocess.run(["bash","-c", command], capture_output = True, text = True, check = True)
         return (f"Success: result:{result.stdout}")
-    except subprocess.CalledProcessError as e:
+    except Exception as e: #subprocess.CalledProcessError
         return (f"Command failed: error encountered: {e.stderr}") 
 
 def agent_loop(model, messages, tools,client):
