@@ -35,8 +35,10 @@ def read_tool(file_path):
         with open(file_path, "r") as file:
             content = file.read()
             return content
-    except FileNotFoundError:
-        return "read mode (r) does not create files , file does not exist."
+    except FileNotFoundError as e:
+        return f"read mode (r) does not create files , {e.stderr}"
+    except IsADirectoryError as e:
+        return f"Expected file, directory provided instead {e.stderr}"
 
 def write_tool(file_path, content):
     folder_path = os.path.dirname(file_path)
@@ -51,7 +53,7 @@ def bash_tool(command):
     try:
         result  = subprocess.run(["bash","-c", command], capture_output = True, text = True, check = True)
         return (f"Success: result:{result.stdout}")
-    except Exception as e: #subprocess.CalledProcessError
+    except subprocess.CalledProcessError as e: #subprocess.CalledProcessError
         return (f"Command failed: error encountered: {e.stderr}") 
 
 def agent_loop(model, messages, tools,client):
