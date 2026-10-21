@@ -161,7 +161,7 @@ def parse_skill_invocation(prompt, skills_metadata):
                 with open(skill_file, 'r', encoding= 'utf-8') as f:
                     post = frontmatter.load(f)
                     content = format_content(post.content, ARGUMENT)
-                    content = f"Skill:{skill} (located at .claude/skills/{skill})\nPaths in the instructions below are relative to that folder.\n\n" + content
+                    content = f"Skill:{skill} (located at ./.claude/skills/{skill})\nPaths in the instructions below are relative to that folder.\n\n" + content
                     invocations+=[content]
         except Exception as e:
             print(e)
