@@ -36,17 +36,20 @@ def read_tool(file_path):
             content = file.read()
             return content
     except FileNotFoundError as e:
-        return f"read mode (r) does not create files , {e.stderr}"
+        return f"read mode (r) does not create files , {e.strerror}"
     except IsADirectoryError as e:
-        return f"Expected file, directory provided instead {e.stderr}"
+        return f"Expected file, directory provided instead {e.strerror}"
 
 def write_tool(file_path, content):
-    folder_path = os.path.dirname(file_path)
-    if(folder_path):
-        os.makedirs(folder_path, exist_ok = True)
-    with open(file_path, "w") as file:
-        file.write(content)
+    try:
+        folder_path = os.path.dirname(file_path)
+        if(folder_path):
+            os.makedirs(folder_path, exist_ok = True)
+        with open(file_path, "w") as file:
+            file.write(content)
         return "File written successfully"
+    except NotADirectoryError as e:
+        return f"Not a directory {e.strerror}"
 
 def bash_tool(command):
     # arguments = command.split()
