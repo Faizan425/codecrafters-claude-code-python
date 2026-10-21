@@ -49,7 +49,7 @@ def write_tool(file_path, content):
 def bash_tool(command):
     # arguments = command.split()
     try:
-        result  = subprocess.run(command, capture_output = True, text = True, check = True, shell = True)
+        result  = subprocess.run(["bash","-c", command], capture_output = True, text = True, check = True, shell = True)
         return (f"Success: result:{result.stdout}")
     except subprocess.CalledProcessError as e:
         return (f"Command failed: error encountered: {e.stderr}") 
