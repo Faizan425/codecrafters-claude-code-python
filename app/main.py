@@ -118,7 +118,6 @@ def parse_skill_invocation(prompt, skills_metadata):
 
 def skill_tool(skill,args, skills_metadata):
     # print(argument)
-    args = "" if not(args) else args
     argument = "/" + skill + args
     return parse_skill_invocation(argument,skills_metadata)
 
@@ -158,6 +157,7 @@ def agent_loop(model, messages, tools,client, skills_metadata):
                     messages.append(res)
                 elif(tool.function.name == "Skill"):
                     arguments = json.loads(tool.function.arguments)
+                    arguments['args'] = "" if not(arguments['args']) else arguments['args']
                     result = skill_tool(arguments['name'], arguments['args'],skills_metadata)
                     # res = {"role": "tool", "tool_call_id": tool.id, "content":result}
                     for r in result:
