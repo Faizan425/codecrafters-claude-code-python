@@ -118,8 +118,8 @@ def parse_skill_invocation(prompt, skills_metadata):
 
 def skill_tool(argument, skills_metadata):
     # print(argument)
-    argument['name'] = "/" + argument['name']
-    return parse_skill_invocation(argument['name'],skills_metadata)
+    argument = "/" + argument
+    return parse_skill_invocation(argument,skills_metadata)
 
 def agent_loop(model, messages, tools,client, skills_metadata):
     while(True):
@@ -157,7 +157,7 @@ def agent_loop(model, messages, tools,client, skills_metadata):
                     messages.append(res)
                 elif(tool.function.name == "Skill"):
                     arguments = json.loads(tool.function.arguments)
-                    result = skill_tool(arguments,skills_metadata)
+                    result = skill_tool(arguments['name'],skills_metadata)
                     res = {"role": "tool", "tool_call_id": tool.id, "content":result}
                     messages.append(res)
 
