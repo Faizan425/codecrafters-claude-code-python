@@ -59,7 +59,68 @@ def bash_tool(command):
     except subprocess.CalledProcessError as e: #subprocess.CalledProcessError
         return (f"Command failed: error encountered: {e.stderr}") 
 
-def agent_loop(model, messages, tools,client):
+def format_content(content, argument):
+    # print(argument)
+    argument = "" if argument == " " else argument
+    arguments_supplied = False if argument == ""  else True
+    arguments_list = argument.split(" ")
+    contents = content.split(" ")
+    formatted_content=""
+    for c in contents:
+        # print(re.search(r"^\$ARGUMENTS", c))
+        if(re.search(r"\$ARGUMENTS", c)):
+            
+            formatted_content = formatted_content + re.sub(r"\$ARGUMENTS",argument,c) + " "
+        elif (match:=re.search(r"\$\d+",c)):
+            if(arguments_supplied):
+                num = match.group()
+                num = int(num[1:]) #skip $
+                formatted_content = formatted_content + re.sub(r"\$\d+",arguments_list[num],c) + " "
+            else:
+                
+                formatted_content = formatted_content + re.sub(r"\$\d+", "",c ) + " "
+        else:
+            formatted_content = formatted_content + c + " "
+        # print(formatted_content)
+    return formatted_content
+
+def parse_skill_invocation(prompt, skills_metadata):
+    if(prompt[0]=="/"):
+        ARGUMENT = ""
+        skills = []
+        invocations = []
+        prompt = prompt.split(" ")
+        for p in range(len(prompt)):
+            match = re.search(r"^/[a-z]+", prompt[p])
+            skill = match.group() if match else None
+            skill = skill[1:].lower() if skill else None
+            if(skill and skill in skills_metadata.keys()):
+                skills +=[skill]
+            else:
+                ARGUMENT = " ".join(prompt[p:])
+                break
+        try:
+            if(len(skills)==0):
+                raise Exception("No valid skills found.")
+            for skill in skills:
+                skill_file = Path("./.claude/skills" + "/" + skill + "/SKILL.md")
+                with open(skill_file, 'r', encoding= 'utf-8') as f:
+                    post = frontmatter.load(f)
+                    content = format_content(post.content, ARGUMENT)
+                    content = f"Skill:{skill} (located at ./.claude/skills/{skill})\nPaths in the instructions below are relative to that folder.\n\n" + content
+                    invocations+=[content]
+        except Exception as e:
+            print(e)
+        return invocations
+
+    else:
+        return [prompt]
+
+def skill_tool(argument, skills_metadata):
+    argument = "/" + argument
+    return parse_skill_invocation(argument,skills_metadata)
+
+def agent_loop(model, messages, tools,client, skills_metadata):
     while(True):
         chat = client.chat.completions.create(model=model , messages=messages, tools=tools)
         #print("Using open router", file = sys.stderr)
@@ -93,31 +154,36 @@ def agent_loop(model, messages, tools,client):
                     result = bash_tool(arguments["command"])
                     res = {"role": "tool", "tool_call_id": tool.id, "content": result}
                     messages.append(res)
+                elif(tool.function.name == "Skill"):
+                    arguments = json.loads(tool.function.arguments)
+                    result = skill_tool(arguments,skills_metadata)
+                    res = {"role": "tool", "tool_call_id": tool.id, "content":result}
+                    message.append(res)
 
-def format_content(content, argument):
-    # print(argument)
-    argument = "" if argument == " " else argument
-    arguments_supplied = False if argument == ""  else True
-    arguments_list = argument.split(" ")
-    contents = content.split(" ")
-    formatted_content=""
-    for c in contents:
-        # print(re.search(r"^\$ARGUMENTS", c))
-        if(re.search(r"\$ARGUMENTS", c)):
+# def format_content(content, argument):
+#     # print(argument)
+#     argument = "" if argument == " " else argument
+#     arguments_supplied = False if argument == ""  else True
+#     arguments_list = argument.split(" ")
+#     contents = content.split(" ")
+#     formatted_content=""
+#     for c in contents:
+#         # print(re.search(r"^\$ARGUMENTS", c))
+#         if(re.search(r"\$ARGUMENTS", c)):
             
-            formatted_content = formatted_content + re.sub(r"\$ARGUMENTS",argument,c) + " "
-        elif (match:=re.search(r"\$\d+",c)):
-            if(arguments_supplied):
-                num = match.group()
-                num = int(num[1:]) #skip $
-                formatted_content = formatted_content + re.sub(r"\$\d+",arguments_list[num],c) + " "
-            else:
+#             formatted_content = formatted_content + re.sub(r"\$ARGUMENTS",argument,c) + " "
+#         elif (match:=re.search(r"\$\d+",c)):
+#             if(arguments_supplied):
+#                 num = match.group()
+#                 num = int(num[1:]) #skip $
+#                 formatted_content = formatted_content + re.sub(r"\$\d+",arguments_list[num],c) + " "
+#             else:
                 
-                formatted_content = formatted_content + re.sub(r"\$\d+", "",c ) + " "
-        else:
-            formatted_content = formatted_content + c + " "
-        # print(formatted_content)
-    return formatted_content
+#                 formatted_content = formatted_content + re.sub(r"\$\d+", "",c ) + " "
+#         else:
+#             formatted_content = formatted_content + c + " "
+#         # print(formatted_content)
+#     return formatted_content
     # for c in contents:
     #     if c[0] == "$":
     #         if c[1:] == "ARGUMENTS":
@@ -143,37 +209,37 @@ def format_content(content, argument):
     #         formatted_content = formatted_content + c + " "
     # return formatted_content
 
-def parse_skill_invocation(prompt, skills_metadata):
-    if(prompt[0]=="/"):
-        ARGUMENT = ""
-        skills = []
-        invocations = []
-        prompt = prompt.split(" ")
-        for p in range(len(prompt)):
-            match = re.search(r"^/[a-z]+", prompt[p])
-            skill = match.group() if match else None
-            skill = skill[1:].lower() if skill else None
-            if(skill and skill in skills_metadata.keys()):
-                skills +=[skill]
-            else:
-                ARGUMENT = " ".join(prompt[p:])
-                break
-        try:
-            if(len(skills)==0):
-                raise Exception("No valid skills found.")
-            for skill in skills:
-                skill_file = Path("./.claude/skills" + "/" + skill + "/SKILL.md")
-                with open(skill_file, 'r', encoding= 'utf-8') as f:
-                    post = frontmatter.load(f)
-                    content = format_content(post.content, ARGUMENT)
-                    content = f"Skill:{skill} (located at ./.claude/skills/{skill})\nPaths in the instructions below are relative to that folder.\n\n" + content
-                    invocations+=[content]
-        except Exception as e:
-            print(e)
-        return invocations
+# def parse_skill_invocation(prompt, skills_metadata):
+#     if(prompt[0]=="/"):
+#         ARGUMENT = ""
+#         skills = []
+#         invocations = []
+#         prompt = prompt.split(" ")
+#         for p in range(len(prompt)):
+#             match = re.search(r"^/[a-z]+", prompt[p])
+#             skill = match.group() if match else None
+#             skill = skill[1:].lower() if skill else None
+#             if(skill and skill in skills_metadata.keys()):
+#                 skills +=[skill]
+#             else:
+#                 ARGUMENT = " ".join(prompt[p:])
+#                 break
+#         try:
+#             if(len(skills)==0):
+#                 raise Exception("No valid skills found.")
+#             for skill in skills:
+#                 skill_file = Path("./.claude/skills" + "/" + skill + "/SKILL.md")
+#                 with open(skill_file, 'r', encoding= 'utf-8') as f:
+#                     post = frontmatter.load(f)
+#                     content = format_content(post.content, ARGUMENT)
+#                     content = f"Skill:{skill} (located at ./.claude/skills/{skill})\nPaths in the instructions below are relative to that folder.\n\n" + content
+#                     invocations+=[content]
+#         except Exception as e:
+#             print(e)
+#         return invocations
 
-    else:
-        return [prompt]
+#     else:
+#         return [prompt]
     # if(prompt[0] == "/"):
     #     parsed_prompt = prompt.split(" ")
     #     final_prompt = ""
@@ -227,6 +293,7 @@ def main():
     skill_prompt_content = "You have access to the following skills:\n\n-"
     for key, value in skills_metadata.items():
         skill_prompt_content += f" {key}:{value}\n" 
+    skill_prompt_content+= "If a skill matches the user's request, call the Skill tool with its name and follow the instructions it returns."
 
     messages=[{"role":"system", "content": skill_prompt_content}]
     for p in prompt_list:
@@ -299,9 +366,25 @@ def main():
                                     }
                                 }
                             }
-                        }
-                    ],
-            client = client
+                        },
+                    {
+                        "type": "function",
+                        "function": {
+                            "name": "Skill",
+                            "description": "Load a skill's instructions into the conversation",
+                            "parameters": {
+                                "type": "object",
+                                "required": ["name"],
+                                "properties": {
+                                    "name": { "type": "string", "description": "The name of the skill to use" },
+                                    "args": { "type": "string", "description": "Optional arguments for the skill" }
+                                    }
+                                }
+                            }
+                    }
+                ],
+            client = client,
+            skills_metadata = skills_metadata
         )
     # print("Using Local Ollama Model...", file=sys.stderr)
         
