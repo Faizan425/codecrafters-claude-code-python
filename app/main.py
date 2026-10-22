@@ -1,4 +1,5 @@
 import argparse
+# from multiprocessing import Process, set_start_method, Pool 
 import os
 import sys
 import json
@@ -13,8 +14,11 @@ from openai import OpenAI
 # Global toggle: Set to 1 to use local Ollama, set to 0 before pushing to CodeCrafters
 USE_LOCAL = 0
 
+forked_skill=[]
+forked_context = False
 
 def initialize_skills():
+    global forked_skill
     target_folder = Path("./.claude/skills")
     skills_metadata = dict()
     prefix = "SKILL.md"
@@ -24,6 +28,9 @@ def initialize_skills():
             try:
                 yaml_data = frontmatter.load(f)
                 skills_metadata[yaml_data['name']]=yaml_data['description']
+                if "context" in yaml_data.keys():
+                    if yaml_data['context'] == "fork":
+                        forked_skill+=[yaml_data['name']]
                 
             except yaml.YAMLError as exc:
                 print(f"Error parsing YAML: {exc}")
@@ -131,8 +138,11 @@ def agent_loop(model, messages, tools,client, skills_metadata):
         messages.append(chat.message)
         if not chat.message.tool_calls or len(chat.message.tool_calls) == 0:
             #print(chat.choices[0].message.content)
-            print(chat.message.content)
-            break
+            if(not forked_context):
+                print(chat.message.content)
+            else:
+                forked_context = False
+            return chat.message.content
         else:
             for tool in chat.message.tool_calls:
                 if(tool.function.name == "Read"):
@@ -157,9 +167,22 @@ def agent_loop(model, messages, tools,client, skills_metadata):
                     messages.append(res)
                 elif(tool.function.name == "Skill"):
                     arguments = json.loads(tool.function.arguments)
-                    arguments['args'] = arguments.get('args', None)
-                    arguments['args'] = "" if not(arguments['args']) else arguments['args']
+                    arguments['args'] = arguments.get('args', "")
+                    # arguments['args'] = "" if not(arguments['args']) else arguments['args']
                     result = skill_tool(arguments['name'], arguments['args'],skills_metadata)
+                    if(arguments['name'] in forked_skill):
+                        forked_context = True
+                        sub_agent_result = agent_loop(model, [messages[0]]+[{"role":"user", "content":result[0]}], tools,client, skills_metadata)
+                        messages.append({"role":"tool", "tool_call_id":tool.id, "content": f"Skill {arguments['name']} ran in a separate context and returned: {sub_agent_result}"})
+                        continue
+                    # if(arguments['name'] in forked_skill):
+                    #     if __name__ == "__main__":
+                    #         with Pool(processes=1) as pool:
+                    #             # args = skill_tool(arguments['name'], arguments['args'], skills_metadata)
+                    #             sub_agent_result = pool.map(main, result)
+                    #             messages.append({"role":"tool", "tool_call_id":tool.id, "content": f"Skill {arguments['name']} ran in a separate context and returned: {sub_agent_result}"})
+                    #             continue
+                    # result = skill_tool(arguments['name'], arguments['args'],skills_metadata)
                     # res = {"role": "tool", "tool_call_id": tool.id, "content":result}
                     for r in result:
                         res = {"role": "tool", "tool_call_id": tool.id, "content":r}
@@ -313,7 +336,7 @@ def main():
     client = OpenAI(api_key=api_key, base_url=base_url)
     model = "llama3.1" if USE_LOCAL == 1 else "anthropic/claude-haiku-4.5"
         
-    agent_loop(
+    return agent_loop(
             model= model, # Ensure you have run `ollama run llama3.1` in your terminal
             # messages=[{"role":"system", "content": skill_prompt_content},{"role": "user", "content": prompt}],
             messages = messages,
