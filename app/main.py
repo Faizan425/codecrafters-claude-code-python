@@ -129,6 +129,7 @@ def skill_tool(skill,args, skills_metadata):
     return parse_skill_invocation(argument,skills_metadata)
 
 def agent_loop(model, messages, tools,client, skills_metadata):
+    global forked_context
     while(True):
         chat = client.chat.completions.create(model=model , messages=messages, tools=tools)
         #print("Using open router", file = sys.stderr)
