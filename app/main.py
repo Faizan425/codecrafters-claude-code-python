@@ -6,6 +6,7 @@ import json
 import subprocess
 import yaml
 import re
+from . import lsp_client
 import frontmatter
 from pathlib import Path
 
@@ -64,7 +65,10 @@ def bash_tool(command):
         result  = subprocess.run(["bash","-c", command], capture_output = True, text = True, check = True)
         return (f"Success: result:{result.stdout}")
     except subprocess.CalledProcessError as e: #subprocess.CalledProcessError
-        return (f"Command failed: error encountered: {e.stderr}") 
+        return (f"Command failed: error encountered: {e.stderr}")
+
+def lsp_tool(arguments, client):
+    return "LSP is not implemented yet" 
 
 def format_content(content, argument):
     # print(argument)
@@ -128,7 +132,7 @@ def skill_tool(skill,args, skills_metadata):
     argument = "/" + skill + args
     return parse_skill_invocation(argument,skills_metadata)
 
-def agent_loop(model, messages, tools,client, skills_metadata):
+def agent_loop(model, lsp_client, messages, tools,client, skills_metadata):
     global forked_context
     while(True):
         chat = client.chat.completions.create(model=model , messages=messages, tools=tools)
@@ -168,7 +172,8 @@ def agent_loop(model, messages, tools,client, skills_metadata):
                     messages.append(res)
                 elif(tool.function.name == "LSP"):
                     arguments = json.loads(tool.function.arguments)
-                    res = {"role": "tool", "tool_call_id":tool.id, "content": "LSP is not implemented yet"}
+                    result = lsp_tool(arguments, lsp_client)
+                    res = {"role": "tool", "tool_call_id":tool.id, "content": result}
                     messages.append(res)
                 elif(tool.function.name == "Skill"):
                     arguments = json.loads(tool.function.arguments)
@@ -317,6 +322,7 @@ def agent_loop(model, messages, tools,client, skills_metadata):
 
 def main():
     # 1. Parse arguments FIRST, so args.p is ready for either API call
+    lsp_client = lsp_client.LSPClient.from_environment()
     p = argparse.ArgumentParser()
     p.add_argument("-p", required=True)
     args = p.parse_args()
@@ -340,12 +346,7 @@ def main():
             
     client = OpenAI(api_key=api_key, base_url=base_url)
     model = "llama3.1" if USE_LOCAL == 1 else "anthropic/claude-haiku-4.5"
-        
-    return agent_loop(
-            model= model, # Ensure you have run `ollama run llama3.1` in your terminal
-            # messages=[{"role":"system", "content": skill_prompt_content},{"role": "user", "content": prompt}],
-            messages = messages,
-            tools= [{
+    tools = [{
                 "type": "function",
                 "function": {
                     "name": "Read",
@@ -400,37 +401,7 @@ def main():
                                 }
                             }
                         },
-                    {
-                        "type": "function",
-                        "function": {
-                            "name": "LSP",
-                            "description": "Returns the file, line, and character where a symbol is defined.",
-                            "parameters": {
-                                "type": "object",
-                                "properties": {
-                                    "operation": {
-                                        "type": "string",
-                                        "enum": ["goToDefinition"]
-                                        },
-                                    "filePath": {
-                                        "type": "string",
-                                        "description": "Absolute path, or a path relative to the agent's current working directory."
-                                        },
-                                    "line": {
-                                        "type": "integer",
-                                        "minimum": 1,
-                                        "description": "1-based line number of the symbol."
-                                        },
-                                    "character": {
-                                        "type": "integer",
-                                        "minimum": 1,
-                                        "description": "1-based character offset in UTF-16 code units (same as character count for ASCII)."
-                                        }
-                                    },
-                                "required": ["operation", "filePath", "line", "character"]
-                                }
-                            }
-                        },
+                    
                     {
                         "type": "function",
                         "function": {
@@ -446,7 +417,150 @@ def main():
                                 }
                             }
                     }
-                ],
+                ]
+    if lsp_client:
+        tools+=[
+            {
+                "type": "function",
+                "function": {
+                    "name": "LSP",
+                    "description": "Returns the file, line, and character where a symbol is defined.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "operation": {
+                                "type": "string",
+                                "enum": ["goToDefinition"]
+                                },
+                                "filePath": {
+                                    "type": "string",
+                                    "description": "Absolute path, or a path relative to the agent's current working directory."
+                                    },
+                                "line": {
+                                    "type": "integer",
+                                    "minimum": 1,
+                                    "description": "1-based line number of the symbol."
+                                    },
+                                "character": {
+                                    "type": "integer",
+                                    "minimum": 1,
+                                    "description": "1-based character offset in UTF-16 code units (same as character count for ASCII)."
+                                    }
+                                },
+                        "required": ["operation", "filePath", "line", "character"]
+                        }
+                    }
+                }
+        ]
+        
+    return agent_loop(
+            model= model, # Ensure you have run `ollama run llama3.1` in your terminal
+            lsp_client = lsp_client,
+            # messages=[{"role":"system", "content": skill_prompt_content},{"role": "user", "content": prompt}],
+            messages = messages,
+            tools = tools,
+            # tools= [{
+            #     "type": "function",
+            #     "function": {
+            #         "name": "Read",
+            #         "description": "Read and return the contents of a file",
+            #         "parameters": {
+            #             "type": "object",
+            #             "properties": {
+            #                 "file_path": {
+            #                     "type": "string",
+            #                     "description": "The path to the file to read"
+            #                     }
+            #                 },
+            #             "required": ["file_path"]
+            #             }
+            #         }
+            #     },
+            #         {
+            #             "type": "function",
+            #             "function": {
+            #                 "name": "Write",
+            #                 "description": "Write content to a file",
+            #                 "parameters": {
+            #                     "type": "object",
+            #                     "required": ["file_path", "content"],
+            #                     "properties": {
+            #                         "file_path": {
+            #                             "type": "string",
+            #                             "description": "The path of the file to write to"
+            #                             },
+            #                         "content": {
+            #                             "type": "string",
+            #                             "description": "The content to write to the file"
+            #                             }
+            #                         }
+            #                     }
+            #                 }
+            #             },
+            #         {
+            #             "type": "function",
+            #             "function": {
+            #                 "name": "Bash",
+            #                 "description": "Execute a shell command",
+            #                 "parameters": {
+            #                     "type": "object",
+            #                     "required": ["command"],
+            #                     "properties": {
+            #                         "command": {
+            #                             "type": "string",
+            #                             "description": "The command to execute"
+            #                             }
+            #                         }
+            #                     }
+            #                 }
+            #             },
+            #         {
+            #             "type": "function",
+            #             "function": {
+            #                 "name": "LSP",
+            #                 "description": "Returns the file, line, and character where a symbol is defined.",
+            #                 "parameters": {
+            #                     "type": "object",
+            #                     "properties": {
+            #                         "operation": {
+            #                             "type": "string",
+            #                             "enum": ["goToDefinition"]
+            #                             },
+            #                         "filePath": {
+            #                             "type": "string",
+            #                             "description": "Absolute path, or a path relative to the agent's current working directory."
+            #                             },
+            #                         "line": {
+            #                             "type": "integer",
+            #                             "minimum": 1,
+            #                             "description": "1-based line number of the symbol."
+            #                             },
+            #                         "character": {
+            #                             "type": "integer",
+            #                             "minimum": 1,
+            #                             "description": "1-based character offset in UTF-16 code units (same as character count for ASCII)."
+            #                             }
+            #                         },
+            #                     "required": ["operation", "filePath", "line", "character"]
+            #                     }
+            #                 }
+            #             },
+            #         {
+            #             "type": "function",
+            #             "function": {
+            #                 "name": "Skill",
+            #                 "description": "Load a skill's instructions into the conversation",
+            #                 "parameters": {
+            #                     "type": "object",
+            #                     "required": ["name"],
+            #                     "properties": {
+            #                         "name": { "type": "string", "description": "The name of the skill to use" },
+            #                         "args": { "type": "string", "description": "Optional arguments for the skill" }
+            #                         }
+            #                     }
+            #                 }
+            #         }
+            #     ],
             client = client,
             skills_metadata = skills_metadata
         )
