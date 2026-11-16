@@ -6,7 +6,7 @@ import json
 import subprocess
 import yaml
 import re
-from lsp_client import LSPClient
+from .lsp_client import LSPClient
 import frontmatter
 from pathlib import Path
 
