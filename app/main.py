@@ -166,6 +166,10 @@ def agent_loop(model, messages, tools,client, skills_metadata):
                     result = bash_tool(arguments["command"])
                     res = {"role": "tool", "tool_call_id": tool.id, "content": result}
                     messages.append(res)
+                elif(tool.function.name == "LSP"):
+                    arguments = json.loads(tool.function.arguments)
+                    res = {"role": "tool", "tool_call_id":tool.id, "content": "LSP is not implemented yet"}
+                    messages.append(res)
                 elif(tool.function.name == "Skill"):
                     arguments = json.loads(tool.function.arguments)
                     arguments['args'] = arguments.get('args', "")
@@ -393,6 +397,37 @@ def main():
                                         "description": "The command to execute"
                                         }
                                     }
+                                }
+                            }
+                        },
+                    {
+                        "type": "function",
+                        "function": {
+                            "name": "LSP",
+                            "description": "Returns the file, line, and character where a symbol is defined.",
+                            "parameters": {
+                                "type": "object",
+                                "properties": {
+                                    "operation": {
+                                        "type": "string",
+                                        "enum": ["goToDefinition"]
+                                        },
+                                    "filePath": {
+                                        "type": "string",
+                                        "description": "Absolute path, or a path relative to the agent's current working directory."
+                                        },
+                                    "line": {
+                                        "type": "integer",
+                                        "minimum": 1,
+                                        "description": "1-based line number of the symbol."
+                                        },
+                                    "character": {
+                                        "type": "integer",
+                                        "minimum": 1,
+                                        "description": "1-based character offset in UTF-16 code units (same as character count for ASCII)."
+                                        }
+                                    },
+                                "required": ["operation", "filePath", "line", "character"]
                                 }
                             }
                         },
