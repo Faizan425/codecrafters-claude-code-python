@@ -6,7 +6,7 @@ import json
 import subprocess
 import yaml
 import re
-import lsp_client
+from lsp_client import LSPClient
 import frontmatter
 from pathlib import Path
 
@@ -182,7 +182,12 @@ def agent_loop(model, lsp_client, messages, tools,client, skills_metadata):
                     result = skill_tool(arguments['name'], arguments['args'],skills_metadata)
                     if(arguments['name'] in forked_skill):
                         forked_context = True
-                        sub_agent_result = agent_loop(model, [messages[0]]+[{"role":"user", "content":result[0]}], tools,client, skills_metadata)
+                        sub_agent_result = agent_loop(model=model,
+                                                      lsp_client=lsp_client, 
+                                                      messages=[messages[0]]+[{"role":"user", "content":result[0]}], 
+                                                      tools=tools,
+                                                      client=client, 
+                                                      skills_metadata=skills_metadata)
                         messages.append({"role":"tool", "tool_call_id":tool.id, "content": f"Skill {arguments['name']} ran in a separate context and returned: {sub_agent_result}"})
                         continue
                     # if(arguments['name'] in forked_skill):
@@ -322,7 +327,7 @@ def agent_loop(model, lsp_client, messages, tools,client, skills_metadata):
 
 def main():
     # 1. Parse arguments FIRST, so args.p is ready for either API call
-    lsp_client = lsp_client.LSPClient.from_environment()
+    lsp_client = LSPClient.from_environment()
     p = argparse.ArgumentParser()
     p.add_argument("-p", required=True)
     args = p.parse_args()
