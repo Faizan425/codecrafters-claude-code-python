@@ -9,6 +9,9 @@ import re
 from .lsp_client import LSPClient
 import frontmatter
 from pathlib import Path
+from urllib.parse import unquote, urlparse
+from urllib.request import url2pathname
+
 
 from openai import OpenAI
 
@@ -17,6 +20,7 @@ USE_LOCAL = 0
 
 forked_skill=[]
 forked_context = False
+opened_files = []
 
 def initialize_skills():
     global forked_skill
@@ -68,6 +72,41 @@ def bash_tool(command):
         return (f"Command failed: error encountered: {e.stderr}")
 
 def lsp_tool(arguments, client):
+    global opened_files
+    if(arguments.operation == "goToDefinition"):
+        file_URI = Path(arguments.filepath).resolve().as_uri()
+        line = arguments.line
+        character = arguments.character
+        
+        if(file_URI not in opened_files):
+            with open(Path(arguments.filepath).absolute(), 'r', encoding='utf-16') as f:
+                contents = f.read()
+                client.notify({
+                                "method":"textDocument/didOpen",
+                
+                                "params":{
+                                    "textDocument":{
+                                        "uri":file_URI,
+                                        "languageId": "python",
+                                        "version":1,
+                                        "text":contents
+                                    }
+                                }
+                            })
+                opened_files+=[file_URI]
+        response = client.notify({
+            "method":"textDocument/definition",
+            "params":{
+                "textDocument":{"uri":file_URI},
+                "position": {"line":line-1, "character":character-1} #0-indexed request
+            }
+        })
+        result = json.loads(response)
+        parsed = urlparse(response.uri)
+        abs_path = Path(url2pathname(parsed.path))
+        base_dir = Path.cwd()
+        rel_path = os.path.relpath(abs_path,start=base_dir)
+        return f"Defined in {rel_path}:{result.start.line+1}:{result.start.character+1}"
     return "LSP is not implemented yet" 
 
 def format_content(content, argument):
@@ -464,108 +503,7 @@ def main():
             # messages=[{"role":"system", "content": skill_prompt_content},{"role": "user", "content": prompt}],
             messages = messages,
             tools = tools,
-            # tools= [{
-            #     "type": "function",
-            #     "function": {
-            #         "name": "Read",
-            #         "description": "Read and return the contents of a file",
-            #         "parameters": {
-            #             "type": "object",
-            #             "properties": {
-            #                 "file_path": {
-            #                     "type": "string",
-            #                     "description": "The path to the file to read"
-            #                     }
-            #                 },
-            #             "required": ["file_path"]
-            #             }
-            #         }
-            #     },
-            #         {
-            #             "type": "function",
-            #             "function": {
-            #                 "name": "Write",
-            #                 "description": "Write content to a file",
-            #                 "parameters": {
-            #                     "type": "object",
-            #                     "required": ["file_path", "content"],
-            #                     "properties": {
-            #                         "file_path": {
-            #                             "type": "string",
-            #                             "description": "The path of the file to write to"
-            #                             },
-            #                         "content": {
-            #                             "type": "string",
-            #                             "description": "The content to write to the file"
-            #                             }
-            #                         }
-            #                     }
-            #                 }
-            #             },
-            #         {
-            #             "type": "function",
-            #             "function": {
-            #                 "name": "Bash",
-            #                 "description": "Execute a shell command",
-            #                 "parameters": {
-            #                     "type": "object",
-            #                     "required": ["command"],
-            #                     "properties": {
-            #                         "command": {
-            #                             "type": "string",
-            #                             "description": "The command to execute"
-            #                             }
-            #                         }
-            #                     }
-            #                 }
-            #             },
-            #         {
-            #             "type": "function",
-            #             "function": {
-            #                 "name": "LSP",
-            #                 "description": "Returns the file, line, and character where a symbol is defined.",
-            #                 "parameters": {
-            #                     "type": "object",
-            #                     "properties": {
-            #                         "operation": {
-            #                             "type": "string",
-            #                             "enum": ["goToDefinition"]
-            #                             },
-            #                         "filePath": {
-            #                             "type": "string",
-            #                             "description": "Absolute path, or a path relative to the agent's current working directory."
-            #                             },
-            #                         "line": {
-            #                             "type": "integer",
-            #                             "minimum": 1,
-            #                             "description": "1-based line number of the symbol."
-            #                             },
-            #                         "character": {
-            #                             "type": "integer",
-            #                             "minimum": 1,
-            #                             "description": "1-based character offset in UTF-16 code units (same as character count for ASCII)."
-            #                             }
-            #                         },
-            #                     "required": ["operation", "filePath", "line", "character"]
-            #                     }
-            #                 }
-            #             },
-            #         {
-            #             "type": "function",
-            #             "function": {
-            #                 "name": "Skill",
-            #                 "description": "Load a skill's instructions into the conversation",
-            #                 "parameters": {
-            #                     "type": "object",
-            #                     "required": ["name"],
-            #                     "properties": {
-            #                         "name": { "type": "string", "description": "The name of the skill to use" },
-            #                         "args": { "type": "string", "description": "Optional arguments for the skill" }
-            #                         }
-            #                     }
-            #                 }
-            #         }
-            #     ],
+            
             client = client,
             skills_metadata = skills_metadata
         )
