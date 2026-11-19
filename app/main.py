@@ -20,7 +20,7 @@ USE_LOCAL = 0
 
 forked_skill=[]
 forked_context = False
-opened_files = []
+opened_files = set()
 
 def initialize_skills():
     global forked_skill
@@ -74,12 +74,12 @@ def bash_tool(command):
 def lsp_tool(arguments, client):
     global opened_files
     if(arguments.operation == "goToDefinition"):
-        file_URI = Path(arguments.filepath).resolve().as_uri()
+        file_URI = Path(arguments['filepath']).resolve().as_uri()
         line = arguments.line
         character = arguments.character
         
         if(file_URI not in opened_files):
-            with open(Path(arguments.filepath).absolute(), 'r', encoding='utf-16') as f:
+            with open(Path(arguments['filepath'].absolute(), 'r', encoding='utf-8')) as f:
                 contents = f.read()
                 client.notify({
                                 "method":"textDocument/didOpen",
@@ -93,20 +93,20 @@ def lsp_tool(arguments, client):
                                     }
                                 }
                             })
-                opened_files+=[file_URI]
-        response = client.notify({
-            "method":"textDocument/definition",
+                opened_files.add(file_URI)
+        response = client.request(
+            "textDocument/definition",
             "params":{
                 "textDocument":{"uri":file_URI},
                 "position": {"line":line-1, "character":character-1} #0-indexed request
             }
-        })
-        result = json.loads(response)
-        parsed = urlparse(response.uri)
+        )
+        # result = response
+        parsed = urlparse(response['uri'])
         abs_path = Path(url2pathname(parsed.path))
         base_dir = Path.cwd()
         rel_path = os.path.relpath(abs_path,start=base_dir)
-        return f"Defined in {rel_path}:{result.start.line+1}:{result.start.character+1}"
+        return f"Defined in {rel_path}:{response['range']['start']['line']+1}:{response['range']['start']['character+1']}"
     return "LSP is not implemented yet" 
 
 def format_content(content, argument):
