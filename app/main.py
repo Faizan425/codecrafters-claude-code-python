@@ -73,7 +73,7 @@ def bash_tool(command):
 
 def lsp_tool(arguments, client):
     global opened_files
-    if(arguments.operation == "goToDefinition"):
+    if(arguments['operation'] == "goToDefinition"):
         file_URI = Path(arguments['filepath']).resolve().as_uri()
         line = arguments.line
         character = arguments.character
