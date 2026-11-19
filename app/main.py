@@ -82,9 +82,9 @@ def lsp_tool(arguments, client):
             with open(Path(arguments['filepath'].absolute(), 'r', encoding='utf-8')) as f:
                 contents = f.read()
                 client.notify({
-                                "method":"textDocument/didOpen",
+                                "textDocument/didOpen",
                 
-                                "params":{
+                                {
                                     "textDocument":{
                                         "uri":file_URI,
                                         "languageId": "python",
@@ -96,7 +96,7 @@ def lsp_tool(arguments, client):
                 opened_files.add(file_URI)
         response = client.request(
             "textDocument/definition",
-            "params":{
+            {
                 "textDocument":{"uri":file_URI},
                 "position": {"line":line-1, "character":character-1} #0-indexed request
             }
