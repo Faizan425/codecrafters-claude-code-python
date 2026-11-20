@@ -74,12 +74,12 @@ def bash_tool(command):
 def lsp_tool(arguments, client):
     global opened_files
     if(arguments['operation'] == "goToDefinition"):
-        file_URI = Path(arguments['filepath']).resolve().as_uri()
+        file_URI = Path(arguments['filePath']).resolve().as_uri()
         line = arguments.line
         character = arguments.character
         
         if(file_URI not in opened_files):
-            with open(Path(arguments['filepath'].absolute(), 'r', encoding='utf-8')) as f:
+            with open(Path(arguments['filePath'].absolute(), 'r', encoding='utf-8')) as f:
                 contents = f.read()
                 client.notify({
                                 "textDocument/didOpen",
@@ -106,7 +106,7 @@ def lsp_tool(arguments, client):
         abs_path = Path(url2pathname(parsed.path))
         base_dir = Path.cwd()
         rel_path = os.path.relpath(abs_path,start=base_dir)
-        return f"Defined in {rel_path}:{response['range']['start']['line']+1}:{response['range']['start']['character+1']}"
+        return f"Defined in {rel_path}:{response['range']['start']['line']+1}:{response['range']['start']['character']+1}"
     return "LSP is not implemented yet" 
 
 def format_content(content, argument):
