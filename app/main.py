@@ -60,21 +60,36 @@ def write_tool(file_path, content, client):
             os.makedirs(folder_path, exist_ok = True)
         with open(file_path, "w") as file:
             file.write(content)
-            file_URI = Path(file_path).resolve().as_uri()
-            if(file_URI in opened_files.keys()):
-                opened_files[file_URI]+=1
-                client.notify(
-                    "textDocument/didChange",
-                    {
-                        "textDocument":{
-                            "uri":file_URI,
-                            "version":opened_files[file_URI]
-                        },
-                        "contentChanges":[{
-                            "text":content
-                        }]
+        file_URI = Path(file_path).resolve().as_uri()
+        if(file_URI in opened_files.keys()):
+            updated_version+=1
+            client.notify(
+                "textDocument/didChange",
+                {
+                    "textDocument":{
+                        "uri":file_URI,
+                        "version":updated_version
+                    },
+                    "contentChanges":[{
+                        "text":content
+                    }]
+                }
+            )
+            opened_files[file_URI]=updated_version
+        else:
+            client.notify(
+                "textDocument/didOpen",
+                {
+                "textDocument":{
+                    "uri":file_URI,
+                    "languageId": "python",
+                    "version":1,
+                    "text":content
                     }
-                )
+            }
+            )
+            opened_files[file_URI]=1
+        
 
         return "File written successfully"
     except NotADirectoryError as e:
