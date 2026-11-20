@@ -62,7 +62,7 @@ def write_tool(file_path, content, client):
             file.write(content)
         file_URI = Path(file_path).resolve().as_uri()
         if(file_URI in opened_files.keys()):
-            updated_version+=1
+            updated_version = opened_files[file_URI] + 1
             client.notify(
                 "textDocument/didChange",
                 {
