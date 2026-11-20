@@ -8,9 +8,10 @@ import yaml
 import re
 from .lsp_client import LSPClient
 import frontmatter
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from urllib.parse import unquote, urlparse
 from urllib.request import url2pathname
+from collections import defaultdict
 
 
 from openai import OpenAI
@@ -107,6 +108,53 @@ def lsp_tool(arguments, client):
         base_dir = Path.cwd()
         rel_path = os.path.relpath(abs_path,start=base_dir)
         return f"Defined in {rel_path}:{response['range']['start']['line']+1}:{response['range']['start']['character']+1}"
+    elif(arguments['operation'] == 'findReferences'):
+        file_URI = Path(arguments['filePath']).resolve().as_uri()
+        line = arguments['line']
+        character = arguments['character']
+        if (file_URI not in opened_files):
+            with open (Path(arguments['filePath']).absolute(), 'r', encoding= 'utf-8') as f:
+                contents = f.read()
+                client.notify(
+                    "textDocument/didOpen",
+                    {
+                    "textDocument":{
+                                    "uri":file_URI,
+                                    "languageId": "python",
+                                    "version":1,
+                                    "text":contents
+                                    }
+                    }
+                )
+            opened_files.add(file_URI)
+        response = client.request(
+            "textDocument/references",
+            {
+                "textDocument":{"uri":file_URI},
+                "position": {"line":line-1, "character": character-1},
+                "context": {"includeDeclaration": True}
+            }
+        )
+        ref_files = defaultdict(list)
+        ref_counter = 0
+        for r in response:
+            parsed_path = urlparse(r['uri']).path 
+            decoded_path  =unquote(parsed_path)
+            filename = PurePosixPath(decoded_path).name
+            ref_files[filename]+=[[r['range']['start']['line']+1,r['range']['start']['character']+1]]
+            ref_counter+=1
+        ref_files_len =len(ref_files) 
+
+        result = f"Found {ref_counter} across {ref_files_len} files:\n\n"
+        for key in ref_files.keys():
+            result+=f"{key}:\n"
+            for ranges in ref_files[key]:
+                result += f"\tLine {ranges[0]}:{ranges[1]}\n"
+        return result 
+
+
+        
+
     return "LSP is not implemented yet" 
 
 def format_content(content, argument):
@@ -474,7 +522,7 @@ def main():
                         "properties": {
                             "operation": {
                                 "type": "string",
-                                "enum": ["goToDefinition"]
+                                "enum": ["goToDefinition","findReferences"]
                                 },
                                 "filePath": {
                                     "type": "string",
