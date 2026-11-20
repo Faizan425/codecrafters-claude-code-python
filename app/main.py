@@ -81,7 +81,7 @@ def lsp_tool(arguments, client):
         if(file_URI not in opened_files):
             with open(Path(arguments['filePath']).absolute(), 'r', encoding='utf-8') as f:
                 contents = f.read()
-                client.notify({
+                client.notify(
                                 "textDocument/didOpen",
                 
                                 {
@@ -92,7 +92,7 @@ def lsp_tool(arguments, client):
                                         "text":contents
                                     }
                                 }
-                            })
+                            )
                 opened_files.add(file_URI)
         response = client.request(
             "textDocument/definition",
