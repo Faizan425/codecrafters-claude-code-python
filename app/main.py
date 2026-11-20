@@ -21,7 +21,7 @@ USE_LOCAL = 0
 
 forked_skill=[]
 forked_context = False
-opened_files = set()
+opened_files = dict()
 
 def initialize_skills():
     global forked_skill
@@ -53,13 +53,29 @@ def read_tool(file_path):
     except IsADirectoryError as e:
         return f"Expected file, directory provided instead {e.strerror}"
 
-def write_tool(file_path, content):
+def write_tool(file_path, content, client):
     try:
         folder_path = os.path.dirname(file_path)
         if(folder_path):
             os.makedirs(folder_path, exist_ok = True)
         with open(file_path, "w") as file:
             file.write(content)
+            file_URI = Path(file_path).resolve().as_uri()
+            if(file_URI in opened_files.keys()):
+                opened_files[file_URI]+=1
+                client.notify(
+                    "textDocument/didChange",
+                    {
+                        "textDocument":{
+                            "uri":file_URI,
+                            "version":opened_files[file_URI]
+                        },
+                        "contentChanges":[{
+                            "text":content
+                        }]
+                    }
+                )
+
         return "File written successfully"
     except NotADirectoryError as e:
         return f"Not a directory {e.strerror}"
@@ -79,7 +95,7 @@ def lsp_tool(arguments, client):
         line = arguments['line']
         character = arguments['character']
         
-        if(file_URI not in opened_files):
+        if(file_URI not in opened_files.keys()):
             with open(Path(arguments['filePath']).absolute(), 'r', encoding='utf-8') as f:
                 contents = f.read()
                 client.notify(
@@ -94,7 +110,8 @@ def lsp_tool(arguments, client):
                                     }
                                 }
                             )
-                opened_files.add(file_URI)
+                # opened_files.add(file_URI)
+                opened_files[file_URI]=1
         response = client.request(
             "textDocument/definition",
             {
@@ -112,7 +129,7 @@ def lsp_tool(arguments, client):
         file_URI = Path(arguments['filePath']).resolve().as_uri()
         line = arguments['line']
         character = arguments['character']
-        if (file_URI not in opened_files):
+        if (file_URI not in opened_files.keys()):
             with open (Path(arguments['filePath']).absolute(), 'r', encoding= 'utf-8') as f:
                 contents = f.read()
                 client.notify(
@@ -126,7 +143,8 @@ def lsp_tool(arguments, client):
                                     }
                     }
                 )
-            opened_files.add(file_URI)
+            # opened_files.add(file_URI)
+            opened_files[file_URI] = 1
         response = client.request(
             "textDocument/references",
             {
@@ -249,7 +267,7 @@ def agent_loop(model, lsp_client, messages, tools,client, skills_metadata):
                     messages.append(res)
                 elif(tool.function.name == "Write"):
                     arguments = json.loads(tool.function.arguments)
-                    result = write_tool(arguments["file_path"], arguments["content"])
+                    result = write_tool(arguments["file_path"], arguments["content"],lsp_client)
                     res = {"role": "tool", "tool_call_id" : tool.id, "content": result}
                     messages.append(res)
                 elif(tool.function.name == "Bash"):
