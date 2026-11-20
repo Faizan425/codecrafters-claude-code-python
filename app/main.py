@@ -75,8 +75,8 @@ def lsp_tool(arguments, client):
     global opened_files
     if(arguments['operation'] == "goToDefinition"):
         file_URI = Path(arguments['filePath']).resolve().as_uri()
-        line = arguments.line
-        character = arguments.character
+        line = arguments['line']
+        character = arguments['character']
         
         if(file_URI not in opened_files):
             with open(Path(arguments['filePath'].absolute(), 'r', encoding='utf-8')) as f:
