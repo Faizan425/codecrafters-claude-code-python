@@ -263,6 +263,7 @@ def agent_loop(model, lsp_client, messages, tools,client, skills_metadata):
         messages.append(chat.message)
         if not chat.message.tool_calls or len(chat.message.tool_calls) == 0:
             #print(chat.choices[0].message.content)
+            print(f"Agent finished, forked_context={forked_context}",file=sys.stderr)
             if(not forked_context):
                 print(chat.message.content)
             else:
@@ -296,9 +297,11 @@ def agent_loop(model, lsp_client, messages, tools,client, skills_metadata):
                     res = {"role": "tool", "tool_call_id":tool.id, "content": result}
                     messages.append(res)
                 elif(tool.function.name == "Skill"):
+                    # print(f"Invoking skill: {arguments['name']}",file=sys.stderr)
                     arguments = json.loads(tool.function.arguments)
                     arguments['args'] = arguments.get('args', "")
                     # arguments['args'] = "" if not(arguments['args']) else arguments['args']
+                    print(f"Invoking skill: {arguments['name']}",file=sys.stderr)
                     result = skill_tool(arguments['name'], arguments['args'],skills_metadata)
                     if(arguments['name'] in forked_skill):
                         forked_context = True
