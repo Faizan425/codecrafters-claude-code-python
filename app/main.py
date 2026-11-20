@@ -61,7 +61,7 @@ def write_tool(file_path, content, client):
         with open(file_path, "w") as file:
             file.write(content)
         file_URI = Path(file_path).resolve().as_uri()
-        if(file_URI in opened_files.keys()):
+        if(file_URI in opened_files.keys() and client):
             updated_version = opened_files[file_URI] + 1
             client.notify(
                 "textDocument/didChange",
@@ -76,7 +76,7 @@ def write_tool(file_path, content, client):
                 }
             )
             opened_files[file_URI]=updated_version
-        else:
+        elif(not(client == None)):
             client.notify(
                 "textDocument/didOpen",
                 {
