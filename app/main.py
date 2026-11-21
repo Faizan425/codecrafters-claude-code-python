@@ -12,6 +12,8 @@ from pathlib import Path, PurePosixPath
 from urllib.parse import unquote, urlparse
 from urllib.request import url2pathname
 from collections import defaultdict
+import time
+import random
 
 
 from openai import OpenAI
@@ -19,10 +21,57 @@ from openai import OpenAI
 # Global toggle: Set to 1 to use local Ollama, set to 0 before pushing to CodeCrafters
 USE_LOCAL = 0
 
+
+supported_languages = dict()
+supported_languages[".py"] = "python"
 forked_skill=[]
 # forked_context = False
 opened_files = dict()
 diagnostic_cursor = 0
+
+# def poll_with_backoff(client,max_attempts=5, base_delay = 0.5,max_delay=10.0):
+#     global diagnostic_cursor
+#     for attempt in range(1,max_attempts +1):
+#         response = client.notifications(after=diagnostic_cursor)
+#         if(response):
+#             diagnostic_cursor = response['cursor']
+#             for notification in response['notifications']:
+#                 if(notification['method'] == "textDocument/publishDiagnostics"):
+#                     return response
+#         if(attempt == max_attempts):
+#             break
+#         delay = min(max_delay, base_delay * (2 ** (attempt-1)))
+#         jitter = random.uniform(0,delay * 0.1)
+#         time.sleep(delay + jitter)
+#     return None
+def poll_until_deadline(
+        client,
+        timeout: float = 10.0,
+        initial_interval: float = 0.5,
+        max_interval: float = 3.0,
+):
+    deadline = time.monotonic()+timeout
+    interval = initial_interval
+    #initial sleep
+    time.sleep(2)
+    while True:  
+        remaining = deadline - time.monotonic()
+        if remaining <=0:
+            return None
+        response = client.notifications(after=diagnostic_cursor)
+        if(response):
+            diagnostic_cursor = response['cursor']
+            for notification in response['notifications']:
+                if(notification['method'] == "textDocument/publishDiagnostics"):
+                    return response
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            return None
+        jitter = random.uniform(0,interval * 0.2)
+        sleep_time = min(interval + jitter, remaining)
+        time.sleep(sleep_time)
+        interval = min (max_interval, interval * 1.5)
+
 
 def initialize_skills():
     global forked_skill
@@ -56,14 +105,20 @@ def read_tool(file_path):
 
 def write_tool(file_path, content, client):
     global diagnostic_cursor
+    if(client):
+        response = client.notifications(after=diagnostic_cursor, timeout_ms=0)
+        diagnostic_cursor = response['cursor'] #drained old notifications, advanced cursor
     try:
         folder_path = os.path.dirname(file_path)
         if(folder_path):
             os.makedirs(folder_path, exist_ok = True)
         with open(file_path, "w") as file:
             file.write(content)
+        report = f"File written successfully\n"
+        if(not client):
+            return report
         file_URI = Path(file_path).resolve().as_uri()
-        if(file_URI in opened_files.keys() and client):
+        if(file_URI in opened_files.keys()):
             updated_version = opened_files[file_URI] + 1
             client.notify(
                 "textDocument/didChange",
@@ -78,44 +133,70 @@ def write_tool(file_path, content, client):
                 }
             )
             opened_files[file_URI]=updated_version
-        elif(not(client == None)):
+        else:
+            s = Path(file_path).suffix
+            if(s not in supported_languages):
+                return report 
             client.notify(
                 "textDocument/didOpen",
                 {
                 "textDocument":{
                     "uri":file_URI,
-                    "languageId": "python",
+                    "languageId": supported_languages[s],
                     "version":1,
                     "text":content
                     }
             }
             )
             opened_files[file_URI]=1
-        report = "File written successfully"
-        response  = client.notifications(after = diagnostic_cursor, timeout_ms = 3)
+    
+        
+        # response  = client.notifications(after = diagnostic_cursor, timeout_ms = 3000)
+        # response = poll_with_backoff(client)
+        response = poll_until_deadline(client)
         if(not(response)):
-            return report #Return if no response arrives within time-out
+            report +=f"\nNo diagnostic available:Timed out waiting for diagnostic report."
+            return report 
         diagnostic_cursor = response['cursor'] # the updated cursor the client sent back for future calls
         valid_diagnostic_reports = dict()
         for notification in response['notifications']:
-            if (('version' in notification['params'] and opened_files[notification['params']['uri']] == notification['params']['uri']) or 'version' not in notification['params']):
+            if(not (notification['method'] == "textDocument/publishDiagnostics")):
+                continue
+            # if(len(notification['params']['diagnostics'])==0):
+            #     continue 
+            if ('version' not in notification['params'] or ('version' in notification['params'] and (notification['params']['uri'] in opened_files.keys()) and opened_files[notification['params']['uri']] == notification['params']['version'])):
                 # if opened_files[notification['params']['uri']] == notification['params']['uri']:
-                parsed_path = urlparse(notification['params']['uri']).path 
-                decoded_path  =unquote(parsed_path)
-                filename = PurePosixPath(decoded_path).name
-                valid_diagnostic_reports[filename] = defaultdict(list)
+                parsed_path = urlparse(notification['params']['uri'])
+                abs_path = url2pathname(parsed_path.path)
+                rel_path = os.path.relpath(abs_path,start=os.getcwd()) 
+                # decoded_path  =unquote(parsed_path)
+                # filename = PurePosixPath(decoded_path).name
+                valid_diagnostic_reports[rel_path] = []
+                if(len(notification['params']['diagnostics']) == 0):
+                    valid_diagnostic_reports[rel_path]=[]
+                    continue 
                 for d in notification['params']['diagnostics']:
-                    valid_diagnostic_reports[filename]+=[[[d[0]['range']['start']['line']+1, d[0]['range']['start']['character']+1],[d[2]['message']]]]
+                    valid_diagnostic_reports[rel_path]+=[[[d['range']['start']['line']+1, d['range']['start']['character']+1],d['message']]]
             else:
                 continue
 
-        
+        # for k, diagnostics in valid_diagnostic_reports.items():
+        #     report += f"{k}:\n"
+        #     if not diagnostics:
+        #         report += "No Issues\n"
+        #     else:
+        #         for d in diagnostics:
+        #             report += f"[Line {d[0][0]}:{d[0][1]}] {d[1]}\n"
         if(len(valid_diagnostic_reports.keys())>0):
-            report = f"<new-diagnostics>The following new diagnostic issues were detected:\n\n"
-            for k in valid_diagnostic_reports.keys():
-                report+=f"{k}:\n"
-                for d in valid_diagnostic_reports[k]:
-                    report+=f"[Line {d[0][0]}:{d[0][1]}] {d[1]}\n"
+            report += f"<new-diagnostics>The following new diagnostic report was received:\n\n"
+            for k, diagnostics in valid_diagnostic_reports.items():
+                report += f"{k}:\n"
+                if not diagnostics:
+                    report += "No Issues\n"
+                else:
+                    for d in diagnostics:
+                        report += f"[Line {d[0][0]}:{d[0][1]}] {d[1]}\n"
+            report+=f"\n</new-diagnostics>"
                    
 
         return report
@@ -137,7 +218,7 @@ def lsp_tool(arguments, client):
         line = arguments['line']
         character = arguments['character']
         
-        if(file_URI not in opened_files.keys()):
+        if(file_URI not in opened_files.keys() and (s:= Path(arguments['filePath']).suffix) in supported_languages.keys()):
             with open(Path(arguments['filePath']).absolute(), 'r', encoding='utf-8') as f:
                 contents = f.read()
                 client.notify(
@@ -146,7 +227,7 @@ def lsp_tool(arguments, client):
                                 {
                                     "textDocument":{
                                         "uri":file_URI,
-                                        "languageId": "python",
+                                        "languageId": supported_languages[s],
                                         "version":1,
                                         "text":contents
                                     }
@@ -171,7 +252,7 @@ def lsp_tool(arguments, client):
         file_URI = Path(arguments['filePath']).resolve().as_uri()
         line = arguments['line']
         character = arguments['character']
-        if (file_URI not in opened_files.keys()):
+        if (file_URI not in opened_files.keys() and (s:= Path(arguments['filePath']).suffix) in supported_languages.keys()):
             with open (Path(arguments['filePath']).absolute(), 'r', encoding= 'utf-8') as f:
                 contents = f.read()
                 client.notify(
@@ -179,7 +260,7 @@ def lsp_tool(arguments, client):
                     {
                     "textDocument":{
                                     "uri":file_URI,
-                                    "languageId": "python",
+                                    "languageId": supported_languages[s],
                                     "version":1,
                                     "text":contents
                                     }
