@@ -20,8 +20,9 @@ from openai import OpenAI
 USE_LOCAL = 0
 
 forked_skill=[]
-forked_context = False
+# forked_context = False
 opened_files = dict()
+diagnostic_cursor = 0
 
 def initialize_skills():
     global forked_skill
@@ -54,6 +55,7 @@ def read_tool(file_path):
         return f"Expected file, directory provided instead {e.strerror}"
 
 def write_tool(file_path, content, client):
+    global diagnostic_cursor
     try:
         folder_path = os.path.dirname(file_path)
         if(folder_path):
@@ -89,9 +91,34 @@ def write_tool(file_path, content, client):
             }
             )
             opened_files[file_URI]=1
-        
+        report = "File written successfully"
+        response  = client.notifications(after = diagnostic_cursor, timeoutMs = 3)
+        if(not(response)):
+            return report #Return if no response arrives within time-out
+        diagnostic_cursor = response['cursor'] # the updated cursor the client sent back for future calls
+        valid_diagnostic_reports = []
+        for notification in response['notifications']:
+            if (('version' in notification['params'] and opened_files[notification['params']['uri']] == notification['params']['uri']) or 'version' not in notification['params']):
+                # if opened_files[notification['params']['uri']] == notification['params']['uri']:
+                parsed_path = urlparse(notification['params']['uri']).path 
+                decoded_path  =unquote(parsed_path)
+                filename = PurePosixPath(decoded_path).name
+                valid_diagnostic_reports[filename] = defaultdict(list)
+                for d in notification['params']['diagnostics']:
+                    valid_diagnostic_reports[filename]+=[[[d['range']['start']['line']+1, d['range']['start']['character']+1],[d['message']]]]
+            else:
+                continue
 
-        return "File written successfully"
+        
+        if(len(valid_diagnostic_reports.keys())>0):
+            report = f"<new-diagnostics>The following new diagnostic issues were detected:\n\n"
+            for k in valid_diagnostic_reports.keys():
+                report+=f"{k}:\n"
+                for d in valid_diagnostic_reports[k]:
+                    report+=f"[Line {d[0][0]}:{d[0][1]}] {d[1]}\n"
+                   
+
+        return report
     except NotADirectoryError as e:
         return f"Not a directory {e.strerror}"
 
@@ -252,8 +279,8 @@ def skill_tool(skill,args, skills_metadata):
     argument = "/" + skill + args
     return parse_skill_invocation(argument,skills_metadata)
 
-def agent_loop(model, lsp_client, messages, tools,client, skills_metadata):
-    global forked_context
+def agent_loop(model, lsp_client, messages, tools,client, skills_metadata, should_print = True):
+    # global forked_context
     while(True):
         chat = client.chat.completions.create(model=model , messages=messages, tools=tools)
         #print("Using open router", file = sys.stderr)
@@ -263,11 +290,13 @@ def agent_loop(model, lsp_client, messages, tools,client, skills_metadata):
         messages.append(chat.message)
         if not chat.message.tool_calls or len(chat.message.tool_calls) == 0:
             #print(chat.choices[0].message.content)
-            print(f"Agent finished, forked_context={forked_context}",file=sys.stderr)
-            if(not forked_context):
+            # print(f"Agent finished, forked_context={forked_context}",file=sys.stderr)
+            # if(not forked_context):
+            #     print(chat.message.content)
+            # else:
+            #     forked_context = False
+            if(should_print):
                 print(chat.message.content)
-            else:
-                forked_context = False
             return chat.message.content
         else:
             for tool in chat.message.tool_calls:
@@ -301,16 +330,21 @@ def agent_loop(model, lsp_client, messages, tools,client, skills_metadata):
                     arguments = json.loads(tool.function.arguments)
                     arguments['args'] = arguments.get('args', "")
                     # arguments['args'] = "" if not(arguments['args']) else arguments['args']
-                    print(f"Invoking skill: {arguments['name']}",file=sys.stderr)
+                    # print(f"Invoking skill: {arguments['name']}",file=sys.stderr)
                     result = skill_tool(arguments['name'], arguments['args'],skills_metadata)
                     if(arguments['name'] in forked_skill):
                         forked_context = True
+                        subagent_tools = [
+                            tool for tool in tools if tool["function"]["name"] != "Skill"
+                        ]
                         sub_agent_result = agent_loop(model=model,
                                                       lsp_client=lsp_client, 
-                                                      messages=[messages[0]]+[{"role":"user", "content":result[0]}], 
-                                                      tools=tools,
+                                                    #   messages=[messages[0]]+[{"role":"user", "content":result[0]}],
+                                                      messages = [{"role":"user", "content": result[0]}], 
+                                                      tools=subagent_tools,
                                                       client=client, 
-                                                      skills_metadata=skills_metadata)
+                                                      skills_metadata=skills_metadata,
+                                                      should_print=False)
                         messages.append({"role":"tool", "tool_call_id":tool.id, "content": f"Skill {arguments['name']} ran in a separate context and returned: {sub_agent_result}"})
                         continue
                     # if(arguments['name'] in forked_skill):
