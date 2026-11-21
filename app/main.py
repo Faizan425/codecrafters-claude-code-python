@@ -44,33 +44,77 @@ diagnostic_cursor = 0
 #         jitter = random.uniform(0,delay * 0.1)
 #         time.sleep(delay + jitter)
 #     return None
-def poll_until_deadline(
-        client,
-        timeout: float = 10.0,
-        initial_interval: float = 0.5,
-        max_interval: float = 3.0,
-):
-    deadline = time.monotonic()+timeout
-    interval = initial_interval
-    #initial sleep
-    time.sleep(2)
-    while True:  
-        remaining = deadline - time.monotonic()
-        if remaining <=0:
-            return None
-        response = client.notifications(after=diagnostic_cursor)
-        if(response):
-            diagnostic_cursor = response['cursor']
-            for notification in response['notifications']:
-                if(notification['method'] == "textDocument/publishDiagnostics"):
-                    return response
+# def poll_until_deadline(
+#         client,
+#         timeout: float = 10.0,
+#         initial_interval: float = 0.5,
+#         max_interval: float = 3.0,
+# ):
+#     deadline = time.monotonic()+timeout
+#     interval = initial_interval
+#     #initial sleep
+#     time.sleep(2)
+#     while True:  
+#         remaining = deadline - time.monotonic()
+#         if remaining <=0:
+#             return None
+#         response = client.notifications(after=diagnostic_cursor)
+#         if(response):
+#             diagnostic_cursor = response['cursor']
+#             for notification in response['notifications']:
+#                 if(notification['method'] == "textDocument/publishDiagnostics"):
+#                     return response
+#         remaining = deadline - time.monotonic()
+#         if remaining <= 0:
+#             return None
+#         jitter = random.uniform(0,interval * 0.2)
+#         sleep_time = min(interval + jitter, remaining)
+#         time.sleep(sleep_time)
+#         interval = min (max_interval, interval * 1.5)
+
+def poll_until_deadline(client, timeout: float = 10.0):
+    global diagnostic_cursor
+
+    deadline = time.monotonic() + timeout
+
+    while True:
         remaining = deadline - time.monotonic()
         if remaining <= 0:
             return None
-        jitter = random.uniform(0,interval * 0.2)
-        sleep_time = min(interval + jitter, remaining)
-        time.sleep(sleep_time)
-        interval = min (max_interval, interval * 1.5)
+
+        response = client.notifications(
+            after=diagnostic_cursor,
+            timeout_ms=min(500, max(1, int(remaining * 1000)))
+        )
+
+        if not response:
+            continue
+
+        diagnostic_cursor = response['cursor']
+
+        valid_notifications = []
+
+        for notification in response['notifications']:
+            if notification['method'] != "textDocument/publishDiagnostics":
+                continue
+
+            params = notification['params']
+            uri = params['uri']
+
+            # Accept unversioned reports or reports
+            # matching a tracked document's current version.
+            if ('version' in params and
+                opened_files.get(uri) != params['version']):
+                continue
+
+            valid_notifications.append(notification)
+
+        if valid_notifications:
+            return {
+                "cursor": diagnostic_cursor,
+                "notifications": valid_notifications
+            }
+
 
 
 def initialize_skills():
