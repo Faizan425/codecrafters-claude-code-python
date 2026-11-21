@@ -96,7 +96,7 @@ def write_tool(file_path, content, client):
         if(not(response)):
             return report #Return if no response arrives within time-out
         diagnostic_cursor = response['cursor'] # the updated cursor the client sent back for future calls
-        valid_diagnostic_reports = []
+        valid_diagnostic_reports = dict()
         for notification in response['notifications']:
             if (('version' in notification['params'] and opened_files[notification['params']['uri']] == notification['params']['uri']) or 'version' not in notification['params']):
                 # if opened_files[notification['params']['uri']] == notification['params']['uri']:
@@ -105,7 +105,7 @@ def write_tool(file_path, content, client):
                 filename = PurePosixPath(decoded_path).name
                 valid_diagnostic_reports[filename] = defaultdict(list)
                 for d in notification['params']['diagnostics']:
-                    valid_diagnostic_reports[filename]+=[[[d['range']['start']['line']+1, d['range']['start']['character']+1],[d['message']]]]
+                    valid_diagnostic_reports[filename]+=[[[d[0]['range']['start']['line']+1, d[0]['range']['start']['character']+1],[d[2]['message']]]]
             else:
                 continue
 
