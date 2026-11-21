@@ -578,10 +578,9 @@ def agent_loop(model, lsp_client, messages, tools,client, skills_metadata, shoul
             diagnostic_cursor = response["cursor"]
 
             if response["notifications"]:
-                # Format only diagnostics, without the
-                # "File written successfully" prefix.
+                
                 report = report_generator(
-                    [response]
+                    response=response
                 )
 
                 if report:
