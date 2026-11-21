@@ -72,15 +72,73 @@ diagnostic_cursor = 0
 #         time.sleep(sleep_time)
 #         interval = min (max_interval, interval * 1.5)
 
-def poll_until_deadline(client, timeout: float = 10.0):
+# def poll_until_deadline(client, timeout: float = 10.0):
+#     global diagnostic_cursor
+
+#     deadline = time.monotonic() + timeout
+
+#     while True:
+#         remaining = deadline - time.monotonic()
+#         if remaining <= 0:
+#             return None
+
+#         response = client.notifications(
+#             after=diagnostic_cursor,
+#             timeout_ms=min(500, max(1, int(remaining * 1000)))
+#         )
+
+#         if not response:
+#             continue
+
+#         diagnostic_cursor = response['cursor']
+
+#         valid_notifications = []
+
+#         for notification in response['notifications']:
+#             if notification['method'] != "textDocument/publishDiagnostics":
+#                 continue
+
+#             params = notification['params']
+#             uri = params['uri']
+
+#             # Accept unversioned reports or reports
+#             # matching a tracked document's current version.
+#             if ('version' in params and
+#                 opened_files.get(uri) != params['version']):
+#                 continue
+
+#             valid_notifications.append(notification)
+
+#         if valid_notifications:
+#             return {
+#                 "cursor": diagnostic_cursor,
+#                 "notifications": valid_notifications
+#             }
+
+
+def poll_until_deadline(
+    client,
+    timeout: float = 10.0,
+    quiet_period: float = 1.0
+):
     global diagnostic_cursor
 
     deadline = time.monotonic() + timeout
+    last_diagnostic_time = None
+    collected_reports = {}
 
     while True:
-        remaining = deadline - time.monotonic()
+        now = time.monotonic()
+        remaining = deadline - now
+
+        # After receiving diagnostics, wait briefly for
+        # additional reports from other affected files.
+        if last_diagnostic_time is not None:
+            quiet_remaining = quiet_period - (now - last_diagnostic_time)
+            remaining = min(remaining, quiet_remaining)
+
         if remaining <= 0:
-            return None
+            break
 
         response = client.notifications(
             after=diagnostic_cursor,
@@ -90,30 +148,38 @@ def poll_until_deadline(client, timeout: float = 10.0):
         if not response:
             continue
 
-        diagnostic_cursor = response['cursor']
+        diagnostic_cursor = response["cursor"]
 
-        valid_notifications = []
-
-        for notification in response['notifications']:
-            if notification['method'] != "textDocument/publishDiagnostics":
+        for notification in response["notifications"]:
+            if notification.get("method") != "textDocument/publishDiagnostics":
                 continue
 
-            params = notification['params']
-            uri = params['uri']
+            params = notification["params"]
+            uri = params["uri"]
 
-            # Accept unversioned reports or reports
-            # matching a tracked document's current version.
-            if ('version' in params and
-                opened_files.get(uri) != params['version']):
+            # Accept unversioned reports, or versioned reports
+            # matching the current tracked document version.
+            if (
+                "version" in params
+                and opened_files.get(uri) != params["version"]
+            ):
                 continue
 
-            valid_notifications.append(notification)
+            # Keep only the latest report for each URI.
+            # Empty diagnostics lists are also preserved.
+            collected_reports[uri] = notification
 
-        if valid_notifications:
-            return {
-                "cursor": diagnostic_cursor,
-                "notifications": valid_notifications
-            }
+            # Reset the quiet-period timer.
+            last_diagnostic_time = time.monotonic()
+
+    if not collected_reports:
+        return None
+
+    return {
+        "cursor": diagnostic_cursor,
+        "notifications": list(collected_reports.values())
+    }
+
 
 
 
@@ -146,6 +212,106 @@ def read_tool(file_path):
         return f"read mode (r) does not create files , {e.strerror}"
     except IsADirectoryError as e:
         return f"Expected file, directory provided instead {e.strerror}"
+
+# def report_generator(response):
+#     report = "File Written Successfully"
+#     global diagnostic_cursor
+#     if(len(response) == 0):
+#         report +=f"\nNo diagnostic available:Timed out waiting for diagnostic report."
+#         return report 
+#     # diagnostic_cursor = response['cursor'] # the updated cursor the client sent back for future calls
+#     valid_diagnostic_reports = dict()
+#     for n in response:
+#         for notification in n['notifications']:
+#             if(not (notification['method'] == "textDocument/publishDiagnostics")):
+#                 continue
+#             if ('version' not in notification['params'] or ('version' in notification['params'] and (notification['params']['uri'] in opened_files.keys()) and opened_files[notification['params']['uri']] == notification['params']['version'])):
+#                 parsed_path = urlparse(notification['params']['uri'])
+#                 abs_path = url2pathname(parsed_path.path)
+#                 rel_path = os.path.relpath(abs_path,start=os.getcwd())
+#                 if(rel_path not in valid_diagnostic_reports.keys()): 
+#                     valid_diagnostic_reports[rel_path] = []
+#                 if(len(notification['params']['diagnostics']) == 0):
+#                         valid_diagnostic_reports[rel_path]=[]
+#                         continue 
+#                 for d in notification['params']['diagnostics']:
+#                     valid_diagnostic_reports[rel_path]+=[[[d['range']['start']['line']+1, d['range']['start']['character']+1],d['message']]]
+#             else:
+#                 continue
+    
+            
+#         if(len(valid_diagnostic_reports.keys())>0):
+#             report += f"<new-diagnostics>The following new diagnostic report was received:\n\n"
+#             for k, diagnostics in valid_diagnostic_reports.items():
+#                 report += f"{k}:\n"
+#                 if not diagnostics:
+#                     report += "No Issues\n"
+#                 else:
+#                     for d in diagnostics:
+#                         report += f"[Line {d[0][0]}:{d[0][1]}] {d[1]}\n"
+#             report+=f"\n</new-diagnostics>"
+                       
+    
+#     return report
+
+
+def report_generator(response, report=""):
+
+    if response is None:
+        return report + "\nDiagnostics unavailable: timed out."
+
+    valid_diagnostic_reports = {}
+
+    for notification in response["notifications"]:
+        if notification.get("method") != "textDocument/publishDiagnostics":
+            continue
+
+        params = notification["params"]
+        uri = params["uri"]
+
+        # Accept unversioned reports, or reports whose
+        # version matches the tracked document version.
+        if (
+            "version" in params
+            and opened_files.get(uri) != params["version"]
+        ):
+            continue
+
+        parsed_path = urlparse(uri)
+        abs_path = url2pathname(parsed_path.path)
+        rel_path = os.path.relpath(abs_path, start=os.getcwd())
+
+        # Replace any previous report for this file.
+        # This also preserves empty diagnostic reports.
+        valid_diagnostic_reports[rel_path] = params["diagnostics"]
+
+    if not valid_diagnostic_reports:
+        return report + "\nNo applicable diagnostic reports received."
+
+    report += (
+        "\n<new-diagnostics>\n"
+        "The following new diagnostic reports were received:\n\n"
+    )
+
+    for file_path, diagnostics in valid_diagnostic_reports.items():
+        report += f"{file_path}:\n"
+
+        if not diagnostics:
+            report += "No Issues\n"
+        else:
+            for d in diagnostics:
+                line = d["range"]["start"]["line"] + 1
+                character = d["range"]["start"]["character"] + 1
+                message = d["message"]
+
+                report += f"[Line {line}:{character}] {message}\n"
+
+        report += "\n"
+
+    report += "</new-diagnostics>"
+
+    return report
+
 
 def write_tool(file_path, content, client):
     global diagnostic_cursor
@@ -198,52 +364,47 @@ def write_tool(file_path, content, client):
         # response  = client.notifications(after = diagnostic_cursor, timeout_ms = 3000)
         # response = poll_with_backoff(client)
         response = poll_until_deadline(client)
-        if(not(response)):
-            report +=f"\nNo diagnostic available:Timed out waiting for diagnostic report."
-            return report 
-        diagnostic_cursor = response['cursor'] # the updated cursor the client sent back for future calls
-        valid_diagnostic_reports = dict()
-        for notification in response['notifications']:
-            if(not (notification['method'] == "textDocument/publishDiagnostics")):
-                continue
-            # if(len(notification['params']['diagnostics'])==0):
-            #     continue 
-            if ('version' not in notification['params'] or ('version' in notification['params'] and (notification['params']['uri'] in opened_files.keys()) and opened_files[notification['params']['uri']] == notification['params']['version'])):
-                # if opened_files[notification['params']['uri']] == notification['params']['uri']:
-                parsed_path = urlparse(notification['params']['uri'])
-                abs_path = url2pathname(parsed_path.path)
-                rel_path = os.path.relpath(abs_path,start=os.getcwd()) 
-                # decoded_path  =unquote(parsed_path)
-                # filename = PurePosixPath(decoded_path).name
-                valid_diagnostic_reports[rel_path] = []
-                if(len(notification['params']['diagnostics']) == 0):
-                    valid_diagnostic_reports[rel_path]=[]
-                    continue 
-                for d in notification['params']['diagnostics']:
-                    valid_diagnostic_reports[rel_path]+=[[[d['range']['start']['line']+1, d['range']['start']['character']+1],d['message']]]
-            else:
-                continue
-
-        # for k, diagnostics in valid_diagnostic_reports.items():
-        #     report += f"{k}:\n"
-        #     if not diagnostics:
-        #         report += "No Issues\n"
+        return report_generator(response=response,report="File Written Successfully")
+        # if(not(response)):
+        #     report +=f"\nNo diagnostic available:Timed out waiting for diagnostic report."
+        #     return report 
+        # diagnostic_cursor = response['cursor'] # the updated cursor the client sent back for future calls
+        # valid_diagnostic_reports = dict()
+        # for notification in response['notifications']:
+        #     if(not (notification['method'] == "textDocument/publishDiagnostics")):
+        #         continue
+        #     # if(len(notification['params']['diagnostics'])==0):
+        #     #     continue 
+        #     if ('version' not in notification['params'] or ('version' in notification['params'] and (notification['params']['uri'] in opened_files.keys()) and opened_files[notification['params']['uri']] == notification['params']['version'])):
+        #         # if opened_files[notification['params']['uri']] == notification['params']['uri']:
+        #         parsed_path = urlparse(notification['params']['uri'])
+        #         abs_path = url2pathname(parsed_path.path)
+        #         rel_path = os.path.relpath(abs_path,start=os.getcwd()) 
+        #         # decoded_path  =unquote(parsed_path)
+        #         # filename = PurePosixPath(decoded_path).name
+        #         valid_diagnostic_reports[rel_path] = []
+        #         if(len(notification['params']['diagnostics']) == 0):
+        #             valid_diagnostic_reports[rel_path]=[]
+        #             continue 
+        #         for d in notification['params']['diagnostics']:
+        #             valid_diagnostic_reports[rel_path]+=[[[d['range']['start']['line']+1, d['range']['start']['character']+1],d['message']]]
         #     else:
-        #         for d in diagnostics:
-        #             report += f"[Line {d[0][0]}:{d[0][1]}] {d[1]}\n"
-        if(len(valid_diagnostic_reports.keys())>0):
-            report += f"<new-diagnostics>The following new diagnostic report was received:\n\n"
-            for k, diagnostics in valid_diagnostic_reports.items():
-                report += f"{k}:\n"
-                if not diagnostics:
-                    report += "No Issues\n"
-                else:
-                    for d in diagnostics:
-                        report += f"[Line {d[0][0]}:{d[0][1]}] {d[1]}\n"
-            report+=f"\n</new-diagnostics>"
+        #         continue
+
+        
+        # if(len(valid_diagnostic_reports.keys())>0):
+        #     report += f"<new-diagnostics>The following new diagnostic report was received:\n\n"
+        #     for k, diagnostics in valid_diagnostic_reports.items():
+        #         report += f"{k}:\n"
+        #         if not diagnostics:
+        #             report += "No Issues\n"
+        #         else:
+        #             for d in diagnostics:
+        #                 report += f"[Line {d[0][0]}:{d[0][1]}] {d[1]}\n"
+        #     report+=f"\n</new-diagnostics>"
                    
 
-        return report
+        # return report
     except NotADirectoryError as e:
         return f"Not a directory {e.strerror}"
 
@@ -406,13 +567,37 @@ def skill_tool(skill,args, skills_metadata):
 
 def agent_loop(model, lsp_client, messages, tools,client, skills_metadata, should_print = True):
     # global forked_context
+    global diagnostic_cursor
     while(True):
+        if lsp_client is not None:
+            response = lsp_client.notifications(
+                after=diagnostic_cursor,
+                timeout_ms=0
+            )
+
+            diagnostic_cursor = response["cursor"]
+
+            if response["notifications"]:
+                # Format only diagnostics, without the
+                # "File written successfully" prefix.
+                report = report_generator(
+                    [response]
+                )
+
+                if report:
+                    # Find the most recent tool result.
+                    for msg in reversed(messages):
+                        if isinstance(msg, dict) and msg.get("role") == "tool":
+                            msg["content"] += "\n\n" + report
+                            break
+
         chat = client.chat.completions.create(model=model , messages=messages, tools=tools)
         #print("Using open router", file = sys.stderr)
         if not chat.choices or len(chat.choices) == 0:
             raise RuntimeError("no choices in response")
         chat = chat.choices[0]
         messages.append(chat.message)
+       
         if not chat.message.tool_calls or len(chat.message.tool_calls) == 0:
             #print(chat.choices[0].message.content)
             # print(f"Agent finished, forked_context={forked_context}",file=sys.stderr)
