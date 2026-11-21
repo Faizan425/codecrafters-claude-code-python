@@ -92,7 +92,7 @@ def write_tool(file_path, content, client):
             )
             opened_files[file_URI]=1
         report = "File written successfully"
-        response  = client.notifications(after = diagnostic_cursor, timeoutMs = 3)
+        response  = client.notifications(after = diagnostic_cursor, timeout_ms = 3)
         if(not(response)):
             return report #Return if no response arrives within time-out
         diagnostic_cursor = response['cursor'] # the updated cursor the client sent back for future calls
